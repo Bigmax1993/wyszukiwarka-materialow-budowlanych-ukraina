@@ -8,5 +8,7 @@ wyslane/
 **/Wyniki/
 **/wyslane/
 *-service-account*.json
+secrets/
+!secrets/.gitkeep
 .vscode/
 .idea/
