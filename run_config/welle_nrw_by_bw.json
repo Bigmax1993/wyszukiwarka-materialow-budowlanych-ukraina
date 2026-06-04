@@ -10,5 +10,5 @@
   ],
   "min_contacts_target": 150,
   "enable_auto_email": false,
-  "dry_run_email": true
+  "dry_run_email": false
 }

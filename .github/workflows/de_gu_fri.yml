@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 name: GU piatek send
 
 on:
@@ -72,3 +73,81 @@ jobs:
           path: |
             Wyniki/
             wyslane/
+=======
+﻿name: GU piatek send
+
+on:
+  schedule:
+    - cron: "0 7 * * 5"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  SCRAPER_TIMEZONE: Europe/Berlin
+  DISABLE_SEND_WINDOW: "1"
+  KANBUD_PROJECT_ROOT: ${{ github.workspace }}/libs
+  SMTP_HOST: ragakomputer.home.pl
+  SMTP_PORT: "465"
+  SMTP_SSL: "1"
+  IMAP_HOST: ragakomputer.home.pl
+  IMAP_PORT: "993"
+  IMAP_SSL: "1"
+  MAIL_ARCHIVE_IMAP: "1"
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: |
+          pip install -r requirements.txt
+          python -m playwright install chromium --with-deps
+
+      - name: Resolve artifact run (czwartek)
+        id: artifact_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+            --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-thu" and .expired==false) | .workflow_run.id' | head -1)
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::Brak artefaktu de-gu-wyniki-thu (uruchom najpierw GU czwartek backfill)"
+            exit 1
+          fi
+          echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Pobieram de-gu-wyniki-thu z run $RUN_ID"
+
+      - name: Download cache from czwartek
+        uses: actions/download-artifact@v4
+        with:
+          name: de-gu-wyniki-thu
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.artifact_run.outputs.run-id }}
+          path: .
+
+      - name: Send emails only
+        env:
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+        run: python de_gu_bauunternehmen_scraper.py --send-emails-only
+
+      - name: Upload Wyniki artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: de-gu-wyniki-fri
+          path: |
+            Wyniki/
+            wyslane/
+>>>>>>> b19a629 (Enable real email send in CI Friday workflow.)
