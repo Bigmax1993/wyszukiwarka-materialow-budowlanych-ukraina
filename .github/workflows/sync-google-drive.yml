@@ -1,4 +1,4 @@
-﻿name: Sync wyniki Google Drive
+name: Sync wyniki Google Drive
 
 on:
   workflow_dispatch:
@@ -7,6 +7,10 @@ on:
   workflow_run:
     workflows: ["GU piatek send"]
     types: [completed]
+
+permissions:
+  actions: read
+  contents: read
 
 env:
   GDRIVE_FOLDER_ID: "1tP8oUi72t4EHDbE9GnHFdvfNtNsJe4xf"
@@ -24,11 +28,30 @@ jobs:
 
       - run: pip install -r requirements.txt -r requirements-drive.txt
 
+      - name: Resolve artifact run (piatek)
+        id: artifact_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            RUN_ID="${{ github.event.workflow_run.id }}"
+          else
+            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-fri" and .expired==false) | .workflow_run.id' | head -1)
+          fi
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::Brak artefaktu de-gu-wyniki-fri"
+            exit 1
+          fi
+          echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Pobieram de-gu-wyniki-fri z run $RUN_ID"
+
       - name: Download artifacts (piatek)
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           name: de-gu-wyniki-fri
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.artifact_run.outputs.run-id }}
           path: .
 
       - name: Validate GDRIVE secret (JSON konta uslugowego)
