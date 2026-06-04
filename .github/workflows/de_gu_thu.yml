@@ -1,9 +1,13 @@
-﻿name: GU czwartek backfill
+name: GU czwartek backfill
 
 on:
   schedule:
     - cron: "30 3 * * 4"
   workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
 
 env:
   SCRAPER_TIMEZONE: Europe/Warsaw
@@ -24,11 +28,26 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install chromium --with-deps
 
+      - name: Resolve artifact run (sroda)
+        id: artifact_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+            --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-wed" and .expired==false) | .workflow_run.id' | head -1)
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::Brak artefaktu de-gu-wyniki-wed (uruchom najpierw GU sroda discovery)"
+            exit 1
+          fi
+          echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Pobieram de-gu-wyniki-wed z run $RUN_ID"
+
       - name: Download cache from sroda
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           name: de-gu-wyniki-wed
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.artifact_run.outputs.run-id }}
           path: .
 
       - name: Backfill and rebuild Excel
