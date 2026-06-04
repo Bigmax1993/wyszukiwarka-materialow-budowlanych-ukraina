@@ -28,54 +28,71 @@ jobs:
 
       - run: pip install -r requirements.txt -r requirements-drive.txt
 
-      - name: Resolve artifact run (piatek)
+      - name: Resolve artifact (fri / thu / wed)
         id: artifact_run
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            ARTIFACT="de-gu-wyniki-fri"
             RUN_ID="${{ github.event.workflow_run.id }}"
           else
-            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
-              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-fri" and .expired==false) | .workflow_run.id' | head -1)
+            for ARTIFACT in de-gu-wyniki-fri de-gu-wyniki-thu de-gu-wyniki-wed; do
+              RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+                --paginate --jq ".artifacts[] | select(.name==\"$ARTIFACT\" and .expired==false) | .workflow_run.id" | head -1)
+              if [ -n "$RUN_ID" ]; then
+                break
+              fi
+            done
           fi
           if [ -z "$RUN_ID" ]; then
-            echo "::error::Brak artefaktu de-gu-wyniki-fri"
-            exit 1
+            echo "::warning::Brak artefaktu (fri/thu/wed) — upload tylko jesli Wyniki/ w repo"
+            echo "artifact=" >> "$GITHUB_OUTPUT"
+            echo "run-id=" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
           echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "Pobieram de-gu-wyniki-fri z run $RUN_ID"
+          echo "Pobieram $ARTIFACT z run $RUN_ID"
 
-      - name: Download artifacts (piatek)
+      - name: Download pipeline artifact
+        if: steps.artifact_run.outputs.run-id != ''
         uses: actions/download-artifact@v4
         with:
-          name: de-gu-wyniki-fri
+          name: ${{ steps.artifact_run.outputs.artifact }}
           github-token: ${{ github.token }}
           run-id: ${{ steps.artifact_run.outputs.run-id }}
           path: .
 
-      - name: Validate GDRIVE secret (JSON konta uslugowego)
+      - name: Validate GDRIVE credentials
         env:
           GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GDRIVE_OAUTH_REFRESH_TOKEN }}
+          GDRIVE_OAUTH_CLIENT_ID: ${{ secrets.GDRIVE_OAUTH_CLIENT_ID }}
+          GDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.GDRIVE_OAUTH_CLIENT_SECRET }}
         run: |
           python -c "
           import os, json, sys
+          refresh = (os.environ.get('GDRIVE_OAUTH_REFRESH_TOKEN') or '').strip()
+          cid = (os.environ.get('GDRIVE_OAUTH_CLIENT_ID') or '').strip()
+          csec = (os.environ.get('GDRIVE_OAUTH_CLIENT_SECRET') or '').strip()
+          if refresh and cid and csec:
+              print('OK: OAuth (upload na Moj dysk)')
+              sys.exit(0)
           raw = (os.environ.get('GDRIVE_SERVICE_ACCOUNT_JSON') or '').strip()
           if not raw:
-              print('PUSTY secret GDRIVE_SERVICE_ACCOUNT_JSON')
+              print('BLAD: Ustaw OAuth (GDRIVE_OAUTH_*) LUB konto uslugowego + Shared Drive')
+              print('PC: python scripts/gdrive_oauth_setup.py')
               sys.exit(1)
           if raw.startswith('AIza'):
-              print('BLAD: wklejony klucz API (AIza...), nie plik JSON konta uslugowego')
+              print('BLAD: GDRIVE_SERVICE_ACCOUNT_JSON to klucz API, nie JSON konta uslugowego')
               sys.exit(1)
-          try:
-              j = json.loads(raw)
-          except json.JSONDecodeError as e:
-              print('BLAD: niepoprawny JSON:', e)
+          j = json.loads(raw)
+          if j.get('type') != 'service_account':
+              print('BLAD: niepoprawny JSON konta uslugowego')
               sys.exit(1)
-          if j.get('type') != 'service_account' or not j.get('client_email'):
-              print('BLAD: brak type=service_account lub client_email')
-              sys.exit(1)
-          print('OK:', j['client_email'])
+          print('UWAGA: tylko konto uslugowego — upload wymaga Shared Drive (Workspace)')
+          print('OK:', j.get('client_email'))
           "
 
       - name: Upload Wyniki to Google Drive
