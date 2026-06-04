@@ -34,10 +34,13 @@ from campaign_data_paths import (  # noqa: E402
 # Pełny dostęp do Drive (wymagany dla Shared Drive i nadpisywania plików).
 SCOPES = ("https://www.googleapis.com/auth/drive",)
 
-_DRIVE_OPTS = {
+_DRIVE_API_OPTS = {
     "supportsAllDrives": True,
-    "includeItemsFromAllDrives": True,
     "supportsTeamDrives": True,
+}
+_LIST_OPTS = {
+    **_DRIVE_API_OPTS,
+    "includeItemsFromAllDrives": True,
 }
 
 _GU_FOLDER_NAME = "GU Bauunternehmen Wyniki"
@@ -99,7 +102,7 @@ def _folder_metadata(service, folder_id: str) -> dict:
         .get(
             fileId=folder_id,
             fields="id,name,driveId,mimeType,parents",
-            **_DRIVE_OPTS,
+            **_DRIVE_API_OPTS,
         )
         .execute()
     )
@@ -129,7 +132,7 @@ def _find_folder_in_parent(service, parent_id: str, name: str) -> str | None:
     )
     res = (
         service.files()
-        .list(q=q, fields="files(id)", pageSize=1, corpora="allDrives", **_DRIVE_OPTS)
+        .list(q=q, fields="files(id)", pageSize=1, corpora="allDrives", **_LIST_OPTS)
         .execute()
     )
     files = res.get("files") or []
@@ -144,7 +147,7 @@ def _create_folder(service, parent_id: str, name: str, *, drive_id: str | None =
     }
     if drive_id:
         meta["driveId"] = drive_id
-    created = service.files().create(body=meta, fields="id", **_DRIVE_OPTS).execute()
+    created = service.files().create(body=meta, fields="id", **_DRIVE_API_OPTS).execute()
     return created["id"]
 
 
@@ -236,7 +239,7 @@ def _upload_file(service, MediaFileUpload, local: Path, parent_id: str) -> str:
     q = f"'{parent_id}' in parents and name = '{safe_name}' and trashed = false"
     existing = (
         service.files()
-        .list(q=q, fields="files(id)", pageSize=1, corpora="allDrives", **_DRIVE_OPTS)
+        .list(q=q, fields="files(id)", pageSize=1, corpora="allDrives", **_LIST_OPTS)
         .execute()
         .get("files")
         or []
@@ -244,9 +247,9 @@ def _upload_file(service, MediaFileUpload, local: Path, parent_id: str) -> str:
     body = {"name": local.name, "parents": [parent_id]}
     if existing:
         fid = existing[0]["id"]
-        service.files().update(fileId=fid, media_body=media, **_DRIVE_OPTS).execute()
+        service.files().update(fileId=fid, media_body=media, **_DRIVE_API_OPTS).execute()
         return fid
-    created = service.files().create(body=body, media_body=media, fields="id", **_DRIVE_OPTS).execute()
+    created = service.files().create(body=body, media_body=media, fields="id", **_DRIVE_API_OPTS).execute()
     return created["id"]
 
 
