@@ -1,4 +1,4 @@
-# [Legacy] Jednorazowy discovery — preferuj plan 3 dni: run_sroda / run_czwartek / run_piatek (sob–nd–pon).
+# [Legacy] Jednorazowy discovery — preferuj plan 5 dni (schedule/PLAN_5_DNI.md) lub --rotate-bundesland.
 # Uruchomienie kampanii GU o dowolnej godzinie (DISABLE_SEND_WINDOW=1).
 
 $ErrorActionPreference = "Stop"
@@ -20,4 +20,4 @@ if (Test-Path $dotenv) {
 }
 
 Set-Location $Campaign
-python de_gu_bauunternehmen_scraper.py --run-config run_config\welle_nrw_by_bw.json @args
+python de_gu_bauunternehmen_scraper.py --rotate-bundesland @args

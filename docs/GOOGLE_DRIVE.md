@@ -59,11 +59,21 @@ cd Wyszukiwarka-partnerow
 
 ## Załącznik PPTX (poniedziałek/wtorek, GitHub Actions)
 
-Prezentacja: [Google Slides MFG](https://docs.google.com/presentation/d/1Q66gIF_Y6R7r98NYzo2dtQy0Jr_K8mTl/edit)
+Prezentacja źródłowa: [Google Slides MFG](https://docs.google.com/presentation/d/1Q66gIF_Y6R7r98NYzo2dtQy0Jr_K8mTl/edit)  
+ID: `1Q66gIF_Y6R7r98NYzo2dtQy0Jr_K8mTl`
 
-Runner GitHub **nie ma** lokalnego pliku PPTX. Udostępnij Slides e-mailowi konta usługi (**Przeglądający**), albo ustaw `MFG_EMAIL_ATTACHMENT_PATH` lokalnie.
+Na runnerze GitHub Actions workflowy send używają pliku z repo:
 
-Moduł: `mfg_gu_email_attachment.py` — **wysyłka bez PPTX kończy się błędem**.
+`assets/campaign/MFG_Referenzliste_Einzelhandel.pptx`
+
+Po aktualizacji Slides: **Plik → Pobierz → PPTX**, zapisz w `assets/campaign/`, commit + push.
+
+Alternatywy (lokalnie / fallback):
+
+- `MFG_EMAIL_ATTACHMENT_PATH` w `.env`
+- Udostępnienie Slides kontu usługi Google (**Przeglądający**) — auto-pobranie przez `mfg_gu_email_attachment.py`
+
+**Wysyłka bez PPTX kończy się błędem.**
 
 ## Zmienne środowiskowe
 
