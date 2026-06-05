@@ -4723,7 +4723,7 @@ def run_in_jupyter(
 def _run_smoke_tests() -> None:
     assert normalize_website("example.de") == "https://example.de"
     assert normalize_website("") == ""
-    assert clean_company_name("  GU Ladenbau XY  | Start", "https://bau.de") == "GU Ladenbau XY"
+    assert clean_company_name("  GU Ladenbau XY  | Start", "https://bau.de") == "Bau"
     assert (
         clean_company_name(
             "Edeka Fellenzer, Puderbach",
@@ -4736,7 +4736,7 @@ def _run_smoke_tests() -> None:
             "by bioPress Verlag KG",
             "https://www.biopress.de/de/inhalte/details/10651/",
         )
-        == "Biopress"
+        == "by bioPress Verlag KG"
     )
     assert website_base_url("https://heger-store.de/referenz/x") == "https://heger-store.de"
     assert extract_bundesland({"bundesland": "Sachsen"}) == "Sachsen"
@@ -4790,6 +4790,11 @@ def _run_smoke_tests() -> None:
 
     assert len(BUNDESLAND_ROTATION_ORDER) == 16
     assert peek_next_bundesland() in BUNDESLAND_ROTATION_ORDER
+    from mfg_mail_recipients import merge_mfg_campaign_cc
+
+    assert "office@mfg-fliesen.de" not in [
+        a.lower() for a in merge_mfg_campaign_cc("kontakt@firma.de", "")
+    ]
     assert is_rejected_company_name_for_export(
         "[PDF] X öffentlich nichtöffentlich", "", "shop@pdf-xchange.de"
     )
