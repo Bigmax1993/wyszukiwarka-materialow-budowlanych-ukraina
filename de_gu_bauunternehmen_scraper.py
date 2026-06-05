@@ -138,6 +138,7 @@ from commercial_contact_filter import (
 )
 from retail_store_builder_filter import (
     has_retail_references_or_portfolio,
+    portfolio_negates_market_projects,
     is_cache_contact_not_store_builder,
     is_loose_serper_discovery_candidate,
     is_media_publisher_contact,
@@ -386,10 +387,10 @@ INQUIRY_REGION_DE = "Deutschland (bundesweit)"
 RETAIL_CHAINS_DE = "Aldi, Penny, Kaufland, Netto, Rewe,Edeka"
 DELIVERY_ADDRESS_DE = "Deutschland (bundesweit)"
 
-# Weryfikacja www: GU/Filialbau + Neubau/Umbau + dowód projektów marketów (tekst/zdjęcia)
+# Weryfikacja www: GU/Filialbau + Neubau/Umbau (+ referencje mile widziane, nie wymagane)
 REQUIRE_WEBSITE_RETAIL_VERIFICATION = True
-REQUIRE_WEBSITE_REFERENCES_OR_PORTFOLIO = True
-REQUIRE_MARKET_PROJECTS_IN_PORTFOLIO = True
+REQUIRE_WEBSITE_REFERENCES_OR_PORTFOLIO = False
+REQUIRE_MARKET_PROJECTS_IN_PORTFOLIO = False
 ENABLE_GEMINI_RETAIL_VERIFICATION = False
 MAX_PAGES_FOR_RETAIL_VERIFICATION = 4
 LARGE_COMPANY_DOMAINS = frozenset(
@@ -1229,7 +1230,7 @@ def is_row_eligible_for_excel_export(row: dict) -> bool:
         return not is_blocked_non_commercial_row(row)
     if not EXPORT_PIPELINE_ROWS_WITHOUT_EMAIL:
         return False
-    if row.get("retail_verified") and has_retail_references_or_portfolio(text):
+    if row.get("retail_verified"):
         return True
     return is_valid_retail_store_builder_contact(
         email="", url=url, name=name, text=text
@@ -1726,7 +1727,7 @@ def build_email_jobs_from_cache_json(
         if contact_info_excluded(info, place_url):
             continue
         _em, _url, _name, _text = contact_validation_fields(info, place_url)
-        if not is_valid_retail_store_builder_contact(
+        if not info.get("retail_verified") and not is_valid_retail_store_builder_contact(
             email=email_target,
             url=_url,
             name=_name,
@@ -2064,7 +2065,8 @@ def detect_retail_chains_in_text(text: str) -> list[str]:
 
 def page_mentions_retail_store_projects(text: str) -> tuple[bool, list[str], str]:
     """
-    GU/Filialbau (Neubau/Umbau Märkte) + dowód projektów marketów (Referenzen, Portfolio oder Fotos).
+    GU/Filialbau (Neubau/Umbau Märkte). Referenzen/Portfolio mile widziane, nie wymagane
+    (gdy REQUIRE_MARKET_PROJECTS_IN_PORTFOLIO=False).
     """
     low = (text or "").lower()
     if is_retail_store_operator_contact(text=low):
@@ -2105,6 +2107,12 @@ def page_mentions_retail_store_projects(text: str) -> tuple[bool, list[str], str
         return True, chains, "referenz_einzelhandel"
     if has_ref and has_build:
         return True, chains, "referenz_ladenbau"
+    if portfolio_negates_market_projects(low):
+        return False, chains, "kein_markt_nachweis"
+    if not REQUIRE_MARKET_PROJECTS_IN_PORTFOLIO:
+        if has_ref:
+            return True, chains, "referenz_optional"
+        return True, chains, "gu_filialbau_kontext"
     return False, chains, "keine_referenzen_portfolio"
 
 
@@ -4194,7 +4202,7 @@ def _process_email_jobs(
             status = f"duplicate_skipped_{today}"
         elif is_email_role_based_or_system(target):
             status = f"suppressed_role_based_{today}"
-        elif not is_valid_retail_store_builder_contact(
+        elif not contact_info.get("retail_verified") and not is_valid_retail_store_builder_contact(
             email=target,
             url=val_url,
             name=val_name,
@@ -4915,9 +4923,9 @@ def _run_smoke_tests() -> None:
         name="Logmar Ladenbau GmbH",
         text="Filialbau Aldi Rewe Referenzprojekte",
     )
-    assert not is_valid_retail_store_builder_contact(
+    assert is_valid_retail_store_builder_contact(
         name="Bau GmbH",
-        text="Generalunternehmer Filialbau Supermarkt Neubau — keine Projektgalerie",
+        text="Generalunternehmer Filialbau Supermarkt Neubau Einzelhandel",
     )
     assert is_valid_retail_store_builder_contact(
         name="Weber Generalunternehmer GmbH",
@@ -5018,9 +5026,9 @@ def _run_smoke_tests() -> None:
     assert ok_hb and "aldi" in chains_hb
     ok_ohne, _, reason_ohne = page_mentions_retail_store_projects(
         "Generalunternehmer Filialbau Supermarkt Neubau. "
-        "Wir bauen Discounter im Einzelhandel — ohne Projektgalerie."
+        "Wir bauen Discounter im Einzelhandel."
     )
-    assert not ok_ohne and reason_ohne == "kein_markt_nachweis"
+    assert ok_ohne and reason_ohne == "gu_filialbau_kontext"
     ok_nur_ref, _, reason_nur = page_mentions_retail_store_projects(
         "Generalunternehmer Filialbau. Referenzen Hallenbau und Bürobau — keine Supermarktprojekte."
     )

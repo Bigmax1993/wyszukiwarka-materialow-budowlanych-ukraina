@@ -348,8 +348,14 @@ def _has_portfolio_section(low: str) -> bool:
     return any(m in low for m in PORTFOLIO_SECTION_MARKERS)
 
 
-def _portfolio_negates_market_projects(low: str) -> bool:
+def portfolio_negates_market_projects(text: str) -> bool:
     """„keine Supermarktprojekte”, „ohne Filialbau-Referenzen” itp."""
+    low = (text or "").lower()
+    return _portfolio_negates_market_projects(low)
+
+
+def _portfolio_negates_market_projects(low: str) -> bool:
+    """Jawna deklaracja braku projektów marketów — nie mylić z brakiem galerii www."""
     return any(
         x in low
         for x in (
@@ -364,13 +370,6 @@ def _portfolio_negates_market_projects(low: str) -> bool:
             "keine supermarktprojekte",
             "ohne einzelhandel",
             "keine einzelhandel",
-            "keine projektgalerie",
-            "ohne projektgalerie",
-            "ohne galerie",
-            "keine fotogalerie",
-            "ohne fotogalerie",
-            "keine bildergalerie",
-            "ohne bildergalerie",
         )
     )
 
@@ -476,11 +475,15 @@ def mentions_retail_store_build_activity_core(text: str) -> bool:
 
 
 def mentions_retail_store_build_activity(text: str) -> bool:
-    """GU / Filialbau + Neubau/Umbau + dowód projektów marketów (tekst lub zdjęcia)."""
+    """GU / Filialbau + Neubau/Umbau + opcjonalnie dowód projektów (Referenzen/Portfolio)."""
     low = (text or "").lower()
     if not mentions_retail_store_build_activity_core(low):
         return False
-    return has_retail_references_or_portfolio(low)
+    if portfolio_negates_market_projects(low):
+        return False
+    if has_retail_references_or_portfolio(low):
+        return True
+    return mentions_retail_store_build_activity_core(low)
 
 
 def is_loose_serper_discovery_candidate(
@@ -523,7 +526,9 @@ def is_valid_retail_store_builder_contact(
         return False
     if not is_valid_commercial_company_contact(email=email, url=url, name=name):
         return False
-    return mentions_retail_store_build_activity(combined)
+    if portfolio_negates_market_projects(combined):
+        return False
+    return mentions_retail_store_build_activity_core(combined)
 
 
 def is_cache_contact_not_store_builder(place_url: str, info: dict | None) -> bool:
