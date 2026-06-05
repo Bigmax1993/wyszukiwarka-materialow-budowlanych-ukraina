@@ -34,3 +34,6 @@ jobs:
 
       - name: Scraper smoke (--test)
         run: python de_gu_bauunternehmen_scraper.py --test
+
+      - name: Regresja discovery GU
+        run: python -m unittest tests.test_gu_discovery_regression -v

@@ -39,6 +39,10 @@ Test-Step "py_compile (wszystkie .py)" {
 
 Test-Step "smoke --test" { python de_gu_bauunternehmen_scraper.py --test }
 
+Test-Step "regresja discovery GU" {
+    python -m unittest tests.test_gu_discovery_regression -v
+}
+
 Test-Step "gu_bundesland_rotation" {
     python -c @"
 from pathlib import Path
