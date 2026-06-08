@@ -2047,6 +2047,23 @@ def build_email_jobs_from_cache_json(
             }
         )
     logger.info(f"Mail-Jobs aus JSON: {len(jobs)}")
+    if not jobs and contacts:
+        with_email = sum(
+            1 for i in contacts.values()
+            if isinstance(i, dict) and (i.get("email_target") or "").strip()
+        )
+        verified = sum(
+            1 for i in contacts.values()
+            if isinstance(i, dict) and i.get("retail_verified")
+        )
+        sent = sum(
+            1 for i in contacts.values()
+            if isinstance(i, dict) and (i.get("email_status") or "").lower() == "sent"
+        )
+        console_step(
+            f"Brak maili do wysyłki: contacts={len(contacts)}, "
+            f"z emailem={with_email}, retail_verified={verified}, już sent={sent}"
+        )
     return jobs
 
 
@@ -6332,6 +6349,8 @@ if __name__ == "__main__":
                     "dry_run_email": False,
                 }
             )
+            if SEND_WINDOW_DISABLED:
+                extra_kw["ignore_send_window"] = True
             print("[TRYB] Tylko wysyłka maili z cache (bez nowego wyszukiwania).")
         if "--backfill-emails-from-cache" in sys.argv:
             logger = setup_logging()

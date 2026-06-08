@@ -70,7 +70,7 @@ jobs:
           MAIL_USER: ${{ secrets.MAIL_USER }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
         run: |
-          ARGS="--send-emails-only"
+          ARGS="--send-emails-only --ignore-send-window"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_resend }}" = "true" ]; then
             ARGS="$ARGS --force-resend"
           fi
