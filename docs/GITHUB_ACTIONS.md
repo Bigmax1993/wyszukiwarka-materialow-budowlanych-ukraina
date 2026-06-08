@@ -104,6 +104,8 @@ sobota → wed → niedziela → thu → sync Drive → pon prep → mon → pon
 
 Sobota discovery pobiera poprzedni `de-gu-wyniki-fri` (kumulacja tygodniowa cache + Excel).
 
+**Sync Drive** (pon 06:00 PL) pobiera **`de-gu-wyniki-thu`** z niedzielnego backfillu — kolejność: `thu` → `wed` → `mon` → `tue` → `fri`. Nie używa `fri`/`tue` z poprzedniej wysyłki, dopóki istnieje `thu`.
+
 
 
 ## Załącznik PPTX na runnerze
@@ -148,13 +150,13 @@ gh workflow run "GU sobota discovery" -R Bigmax1993/Wyszukiwarka-partnerow
 
 gh workflow run "GU niedziela backfill" -R Bigmax1993/Wyszukiwarka-partnerow
 
+gh workflow run "Sync wyniki Google Drive" -R Bigmax1993/Wyszukiwarka-partnerow
+
 gh workflow run "GU poniedzialek prep" -R Bigmax1993/Wyszukiwarka-partnerow
 
 gh workflow run "GU poniedzialek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
 
 gh workflow run "GU wtorek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
-
-gh workflow run "Sync wyniki Google Drive" -R Bigmax1993/Wyszukiwarka-partnerow
 
 ```
 

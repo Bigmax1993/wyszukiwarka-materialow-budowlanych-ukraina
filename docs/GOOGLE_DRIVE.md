@@ -35,6 +35,18 @@ python scripts/gdrive_oauth_setup.py
 
 Skrypt ustawi secrets `GDRIVE_OAUTH_*` i uruchomi sync. Kolejne runy CI uploadują na Twój folder `1tP8oUi72t4EHDbE9GnHFdvfNtNsJe4xf`.
 
+## Stała reguła sync (GitHub Actions)
+
+| Reguła | Wartość |
+|--------|---------|
+| **Kiedy** | **Poniedziałek 06:00** (Europe/Warsaw); ręcznie: `gh workflow run "Sync wyniki Google Drive"` |
+| **Cron UTC** | `0 4 * * 1` (CEST); zimą CET: `0 5 * * 1` |
+| **Źródło danych** | Artefakt **`de-gu-wyniki-thu`** (niedzielny backfill) — priorytet nad wysyłkami |
+| **Kolejność fallback** | `thu` → `wed` → `mon` → `tue` → `fri` (pierwszy nie-wygasły) |
+| **Trigger** | Tylko `schedule` + `workflow_dispatch` (bez auto-sync po wtorku) |
+
+Po niedzielnym backfillu na Drive trafia **świeży Excel** (np. 20 firm), zanim w poniedziałek o 08:00 ruszy prep. Lokalny skrypt `scripts/upload_wyniki_to_drive.ps1` używa **tej samej** kolejności artefaktów co workflow CI.
+
 ## Konto usługi Google (jednorazowo)
 
 1. [Google Cloud Console](https://console.cloud.google.com/) → projekt → włącz **Google Drive API**.

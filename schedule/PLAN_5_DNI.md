@@ -45,4 +45,6 @@ sobota → wed → niedziela → thu → sync Drive → pon prep → mon → pon
 | send 2 | `de_gu_fri.yml` | `0 7 * * 2` → **09:00** wtorek |
 | sync Drive | `sync-google-drive.yml` | `0 4 * * 1` → **06:00** poniedziałek |
 
+**Sync Drive — stała reguła:** pon 06:00 PL, artefakt **`thu`** (backfill) przed `fri`/`tue`; ta sama kolejność w `scripts/upload_wyniki_to_drive.ps1`.
+
 **Zimą (CET):** send 1 → `0 11 * * 1` (12:00 PL); sync → `0 5 * * 1` (06:00 PL).

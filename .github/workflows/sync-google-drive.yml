@@ -1,5 +1,11 @@
 name: Sync wyniki Google Drive
 
+# Stała reguła kampanii GU:
+# - Harmonogram: poniedziałek 06:00 Europe/Warsaw (cron 04:00 UTC CEST / 05:00 CET).
+# - Źródło danych: pierwszy dostępny artefakt thu → wed → mon → tue → fri
+#   (Excel po niedzielnym backfillu; NIE fri/tue z poprzedniej wysyłki).
+# - Tylko workflow_dispatch + schedule (bez auto-triggera po wysyłce).
+
 on:
   workflow_dispatch:
   schedule:
