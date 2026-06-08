@@ -51,10 +51,10 @@ if (-not $SkipDiscovery) {
     Invoke-GhaWorkflow "GU sobota discovery"
 }
 Invoke-GhaWorkflow "GU niedziela backfill"
+Invoke-GhaWorkflow "Sync wyniki Google Drive"
 Invoke-GhaWorkflow "GU poniedzialek prep"
 Invoke-GhaWorkflow "GU poniedzialek send" $sendFields
 Invoke-GhaWorkflow "GU wtorek send" $sendFields
-Invoke-GhaWorkflow "Sync wyniki Google Drive"
 
 Write-Host ""
 Write-Host "Pipeline zakonczony pomyslnie." -ForegroundColor Green

@@ -3,10 +3,8 @@ name: Sync wyniki Google Drive
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 12 * * 2"
-  workflow_run:
-    workflows: ["GU wtorek send"]
-    types: [completed]
+    # 04:00 UTC = 06:00 Europe/Warsaw (CEST); zimą (CET) ustaw 05:00 UTC
+    - cron: "0 4 * * 1"
 
 permissions:
   actions: read

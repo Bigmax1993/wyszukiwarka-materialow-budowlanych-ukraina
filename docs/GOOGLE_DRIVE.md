@@ -19,7 +19,7 @@ Folder może być **pusty** przed pierwszym uruchomieniem scrapera — pliki pow
 
 | Sposób | Kiedy |
 |--------|--------|
-| **GitHub Actions** | Workflow `Sync wyniki Google Drive` (po wtorku / ręcznie) |
+| **GitHub Actions** | Workflow `Sync wyniki Google Drive` (poniedziałek 06:00 PL / ręcznie) |
 | **Lokalnie** | `python scripts/gdrive_upload_wyniki.py --campaign-dir .` |
 | **PC + Drive for desktop** | Zmienna `KANBUD_GOOGLE_DRIVE_GU_PATH` → zapis na bieżąco |
 
