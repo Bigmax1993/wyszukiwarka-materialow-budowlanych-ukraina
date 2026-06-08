@@ -1,4 +1,4 @@
-# Wyszukiwarka partnerów — kampania GU (bundesweit)
+﻿# Wyszukiwarka partnerów — kampania GU (bundesweit)
 
 
 
@@ -68,7 +68,7 @@ powershell -ExecutionPolicy Bypass -File scripts\RUN_ALL_TESTS.ps1
 
 | `Wyniki/de_gu_bauunternehmen_cache.json` | Cache Serper + kontakty (kumulacja tygodniowa) |
 
-| `Wyniki/de_gu_bauunternehmen_kontakte.xlsx` | Excel — nowe firmy dopisywane przy każdym runie |
+| `Wyniki/de_gu_bauunternehmen_kontakte.xlsx` | Excel — **append** (dopisywanie); arkusz **Info** opisuje zasady zapisu |
 
 | `Wyniki/de_gu_bauunternehmen_scraper.log` | Log |
 

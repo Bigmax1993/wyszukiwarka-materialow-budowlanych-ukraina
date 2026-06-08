@@ -14,7 +14,7 @@ from typing import Any
 from scraper_env import ENV_GEMINI_MODEL, ENV_GEMINI_MODELS, get_env_value, get_google_ai_studio_api_key
 
 GEMINI_TIMEOUT = 45
-GEMINI_INTER_MODEL_DELAY = 12
+GEMINI_INTER_MODEL_DELAY = 15
 
 
 def build_custom_draft_prompt(

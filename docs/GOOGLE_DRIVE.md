@@ -9,7 +9,7 @@ ID folderu: `1tP8oUi72t4EHDbE9GnHFdvfNtNsJe4xf`
 | Plik / folder | Opis |
 |---------------|------|
 | `de_gu_bauunternehmen_cache.json` | Cache |
-| `de_gu_bauunternehmen_kontakte.xlsx` | Excel |
+| `de_gu_bauunternehmen_kontakte.xlsx` | Excel (append; arkusz Info — nie przebudowa od zera) |
 | `de_gu_bauunternehmen_scraper.log` | Log |
 | `wyslane/*.eml` | Kopie wysłanych maili |
 

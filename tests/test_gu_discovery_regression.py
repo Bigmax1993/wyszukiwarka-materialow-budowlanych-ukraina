@@ -64,6 +64,13 @@ class BundesweitRegression(unittest.TestCase):
         )
 
 
+class GeminiThrottleRegression(unittest.TestCase):
+    def test_gemini_api_delay_unified_at_15_seconds(self):
+        self.assertEqual(scraper.GEMINI_API_DELAY_SECONDS, 15)
+        self.assertEqual(scraper.GEMINI_INTER_MODEL_DELAY_SECONDS, 15)
+        self.assertEqual(scraper.GEMINI_MIN_SECONDS_BETWEEN_CALLS, 15)
+
+
 class SerperLimitRegression(unittest.TestCase):
     def test_reset_clears_daily_counter(self):
         cache = scraper._empty_cache()
@@ -222,6 +229,56 @@ class SerperOnlyFilterRegression(unittest.TestCase):
         row = scraper.row_from_excel_record(rec)
         self.assertEqual(row.get("verification_reason"), scraper.PENDING_WWW_VERIFY_REASON)
         self.assertTrue(scraper.is_row_eligible_for_excel_export(row))
+
+    def test_website_inbox_email_on_short_domain(self):
+        from email_targeting import (
+            MIN_EMAIL_SCORE_FOR_SEND,
+            pick_best_email_for_inquiry,
+            pick_best_email_from_website_scrape,
+        )
+
+        strict, strict_score = pick_best_email_for_inquiry(
+            ["info@k-in.de"], "https://koerling-interiors.de"
+        )
+        self.assertEqual(strict, "")
+        self.assertEqual(strict_score, 6)
+        relaxed, relaxed_score = pick_best_email_from_website_scrape(
+            ["info@k-in.de"], "https://koerling-interiors.de"
+        )
+        self.assertEqual(relaxed, "info@k-in.de")
+        self.assertGreaterEqual(relaxed_score, MIN_EMAIL_SCORE_FOR_SEND)
+
+    def test_sync_pipeline_rows_populates_email_jobs(self):
+        cache = scraper._empty_cache()
+        rows = [
+            {
+                "nazwa": "Körling Interiors GmbH",
+                "url": "https://koerling-interiors.de",
+                "www": "https://koerling-interiors.de",
+                "email_target": "info@k-in.de",
+                "retail_verified": True,
+                "is_gu": True,
+                "verification_reason": "ok",
+                "page_snippet": "Generalunternehmer Ladenbau",
+            }
+        ]
+        scraper.sync_pipeline_rows_to_contacts_cache(rows, cache)
+        jobs = scraper.build_email_jobs_from_cache_json(
+            logging.getLogger("test"), cache=cache
+        )
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["email_target"], "info@k-in.de")
+
+    def test_excel_info_sheet_documents_append_mode(self):
+        rows = scraper.build_excel_info_sheet_rows()
+        self.assertGreaterEqual(len(rows), 3)
+        text = " ".join(
+            str(v)
+            for row in rows
+            for v in row.values()
+        ).lower()
+        self.assertIn("append", text)
+        self.assertIn("przebudow", text)
 
     def test_merge_pipeline_preserves_existing_when_cache_empty(self):
         existing = [

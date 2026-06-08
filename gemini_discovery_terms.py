@@ -169,6 +169,7 @@ def generate_gemini_discovery_terms(
         exclude_terms=exclude_terms,
     )
     try:
+        logger.info("Gemini discovery: generowanie %s fraz", terms_requested)
         text, model = gemini_generate_text(prompt, logger, api_key, cache=cache)
         logger.info("Gemini discovery terms, model=%s", model)
     except Exception as exc:

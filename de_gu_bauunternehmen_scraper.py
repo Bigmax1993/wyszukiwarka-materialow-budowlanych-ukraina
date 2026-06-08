@@ -193,6 +193,7 @@ from email_targeting import (
     is_unsuitable_inquiry_email,
     needs_gemini_email_arbitration,
     pick_best_email_for_inquiry,
+    pick_best_email_from_website_scrape,
     rank_email_candidates,
     score_email_candidate,
     validate_gemini_email_choice,
@@ -266,8 +267,10 @@ GEMINI_MODELS = get_env_value(
     ENV_GEMINI_MODELS,
     "gemini-2.5-flash-lite,gemini-2.0-flash-lite",
 ).strip()
-GEMINI_INTER_MODEL_DELAY_SECONDS = 15
-GEMINI_MIN_SECONDS_BETWEEN_CALLS = 4
+# Odstęp między kolejnymi zapytaniami Gemini oraz przed przełączeniem modelu (słowa kluczowe itd.)
+GEMINI_API_DELAY_SECONDS = 15
+GEMINI_INTER_MODEL_DELAY_SECONDS = GEMINI_API_DELAY_SECONDS
+GEMINI_MIN_SECONDS_BETWEEN_CALLS = GEMINI_API_DELAY_SECONDS
 GEMINI_RATE_LIMIT_COOLDOWN_SECONDS = 3600
 PAGE_SNIPPET_MAX_CHARS = 3500
 
@@ -789,6 +792,51 @@ def save_csv(rows, path: Path) -> None:
         writer.writerows(rows)
 
 
+def build_excel_info_sheet_rows() -> list[dict]:
+    """Arkusz Info w Excelu — zasady zapisu (append, nie pełna przebudowa)."""
+    return [
+        {
+            "Temat": "Tryb zapisu Excel",
+            "Wartość": (
+                "APPEND — pipeline dopisuje nowe firmy i aktualizuje istniejące wiersze "
+                "(po www/url). Nie przebudowuje pliku od zera przy każdym uruchomieniu."
+            ),
+        },
+        {
+            "Temat": "Start każdego runu",
+            "Wartość": (
+                "Scraper ładuje istniejący plik Excel (arkusz Kontakte), potem dopisuje "
+                "nowe wiersze z discovery / backfill / cache JSON."
+            ),
+        },
+        {
+            "Temat": "Czego nie robić ręcznie",
+            "Wartość": (
+                "Nie kasuj wszystkich wierszy w Kontakte — przy pustym Excelu i pustym "
+                "cache pipeline nie odtworzy historii. Edycja pojedynczych wierszy OK."
+            ),
+        },
+        {
+            "Temat": "--rebuild-from-cache",
+            "Wartość": (
+                "Scala wiersze z JSON cache + istniejący Excel (merge po URL). "
+                "Gdy contacts=0 w cache — zachowuje dotychczasowe wiersze z Excela."
+            ),
+        },
+        {
+            "Temat": "Arkusze",
+            "Wartość": "Info (ten arkusz) | Kontakte (firmy) | Wojewodztwa (podsumowanie landów)",
+        },
+        {
+            "Temat": "Cache JSON",
+            "Wartość": (
+                "Osobny plik de_gu_bauunternehmen_cache.json — kumulacja tygodniowa; "
+                "reset cache ≠ kasowanie Excela (chyba że świadomie usuniesz plik .xlsx)."
+            ),
+        },
+    ]
+
+
 def save_excel(rows, path: Path, logger: logging.Logger, cache=None) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     try:
@@ -820,7 +868,11 @@ def save_excel(rows, path: Path, logger: logging.Logger, cache=None) -> None:
         try:
             write_excel_with_reply_styles(
                 path,
-                {"Kontakte": export_rows, "Wojewodztwa": state_rows},
+                {
+                    "Info": build_excel_info_sheet_rows(),
+                    "Kontakte": export_rows,
+                    "Wojewodztwa": state_rows,
+                },
                 cache,
                 cfg,
                 logger,
@@ -841,7 +893,11 @@ def save_excel(rows, path: Path, logger: logging.Logger, cache=None) -> None:
             )
             write_excel_with_reply_styles(
                 alt,
-                {"Kontakte": export_rows, "Wojewodztwa": state_rows},
+                {
+                    "Info": build_excel_info_sheet_rows(),
+                    "Kontakte": export_rows,
+                    "Wojewodztwa": state_rows,
+                },
                 cache,
                 cfg_alt,
                 logger,
@@ -935,12 +991,14 @@ def mark_gemini_rate_limited(
     )
 
 
-def wait_for_gemini_slot(cache: dict | None) -> None:
+def wait_for_gemini_slot(cache: dict | None, *, reason: str = "") -> None:
     if cache is None:
         return
     last = float(cache.get("gemini_last_call_at", 0) or 0)
-    wait = GEMINI_MIN_SECONDS_BETWEEN_CALLS - (time.time() - last)
+    wait = GEMINI_API_DELAY_SECONDS - (time.time() - last)
     if wait > 0:
+        note = f" — {reason}" if reason else ""
+        console_step(f"Gemini: pauza {wait:.0f}s przed zapytaniem{note}")
         time.sleep(wait)
 
 
@@ -1874,19 +1932,79 @@ def contact_validation_fields(
     return email, url, name, text
 
 
+def pipeline_row_to_contact_info(row: dict) -> dict:
+    """Wiersz pipeline / Excel → pola contacts JSON."""
+    name = (row.get("company_name_clean") or row.get("nazwa") or "").strip()
+    email = (row.get("email_target") or "").strip()
+    return {
+        k: v
+        for k, v in {
+            "company_name": name,
+            "company_name_clean": name,
+            "company_name_raw": (row.get("company_name_raw") or name).strip(),
+            "official_website": (
+                row.get("official_website") or row.get("www") or row.get("url") or ""
+            ).strip(),
+            "email_target": email,
+            "emails_found": (row.get("emails_found") or "").strip(),
+            "phones_found": (row.get("phones_found") or row.get("telefon") or "").strip(),
+            "email_status": (row.get("email_status") or "").strip(),
+            "retail_verified": bool(row.get("retail_verified")),
+            "verification_reason": (row.get("verification_reason") or "").strip(),
+            "page_snippet": (row.get("page_snippet") or "").strip(),
+            "retail_chains_found": (row.get("retail_chains_found") or "").strip(),
+            "is_gu": bool(row.get("is_gu")),
+            "gu_marker": (row.get("gu_marker") or "").strip(),
+            "contact_quality_score": int(row.get("contact_quality_score", 0) or 0),
+            "full_address": (row.get("full_address") or row.get("adres") or "").strip(),
+            "bundesland": (row.get("bundesland") or "").strip(),
+        }.items()
+        if v not in ("", None) or k in ("retail_verified", "is_gu", "email_target", "email_status")
+    }
+
+
+def sync_pipeline_rows_to_contacts_cache(all_rows: list[dict], cache: dict) -> int:
+    """Scala wiersze z Excela/pipeline do cache contacts przed wysyłką."""
+    contacts = cache.setdefault("contacts", {})
+    synced = 0
+    for row in all_rows:
+        url = (row.get("url") or row.get("www") or "").strip()
+        if not url:
+            continue
+        info = dict(contacts.get(url) or {})
+        patch = pipeline_row_to_contact_info(row)
+        for key, val in patch.items():
+            if key == "email_target" and not val:
+                continue
+            if val != "" and val is not None:
+                info[key] = val
+            elif key in ("retail_verified", "is_gu"):
+                info[key] = val
+        contacts[url] = info
+        synced += 1
+    if synced:
+        console_step(f"Pipeline → cache contacts: {synced} URL")
+    return synced
+
+
 def build_email_jobs_from_cache_json(
-    logger: logging.Logger, *, force_resend: bool = False
+    logger: logging.Logger,
+    *,
+    force_resend: bool = False,
+    cache: dict | None = None,
 ):
     console_step("E-Mail-Warteschlange aus Cache JSON")
-    if not CACHE_FILE.exists():
-        logger.info("Kein Cache JSON – keine Mails.")
-        return []
-    try:
-        with open(CACHE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        logger.warning(f"Cache JSON Lesefehler: {e}")
-        return []
+    data = cache
+    if data is None:
+        if not CACHE_FILE.exists():
+            logger.info("Kein Cache JSON – keine Mails.")
+            return []
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.warning(f"Cache JSON Lesefehler: {e}")
+            return []
     contacts = data.get("contacts", {}) if isinstance(data, dict) else {}
     jobs = []
     for place_url, info in contacts.items():
@@ -1899,7 +2017,15 @@ def build_email_jobs_from_cache_json(
         if contact_info_excluded(info, place_url):
             continue
         _em, _url, _name, _text = contact_validation_fields(info, place_url)
-        if not info.get("retail_verified") and not is_valid_retail_store_builder_contact(
+        pending_www = (
+            (info.get("verification_reason") or "").strip() == PENDING_WWW_VERIFY_REASON
+            and not info.get("retail_verified")
+        )
+        if pending_www and email_target and (
+            info.get("is_gu") or is_generalunternehmer(_text)[0]
+        ):
+            pass
+        elif not info.get("retail_verified") and not is_valid_retail_store_builder_contact(
             email=email_target,
             url=_url,
             name=_name,
@@ -2745,6 +2871,10 @@ def _run_gemini_discovery_supplement(
     for round_n in range(1, GEMINI_DISCOVERY_MAX_ROUNDS + 1):
         if stop_requested:
             break
+        if round_n > 1:
+            wait_for_gemini_slot(
+                cache, reason=f"Gemini discovery runda {round_n}"
+            )
         if not _needs_gemini_discovery_supplement(
             all_rows,
             cache,
@@ -3229,16 +3359,17 @@ def gemini_generate_text(prompt: str, logger: logging.Logger, api_key: str, cach
             continue
         if seen_active_model:
             console_step(
-                f"Gemini: Pause {GEMINI_INTER_MODEL_DELAY_SECONDS}s vor nächstem Modell ({model})"
+                f"Gemini: pauza {GEMINI_INTER_MODEL_DELAY_SECONDS}s przed modelem {model}"
             )
             time.sleep(GEMINI_INTER_MODEL_DELAY_SECONDS)
+        else:
+            wait_for_gemini_slot(cache, reason="generateContent")
         seen_active_model = True
         endpoint = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"{model}:generateContent?key={api_key}"
         )
         try:
-            wait_for_gemini_slot(cache)
             touch_gemini_call(cache)
             resp = request_with_retry(
                 requests.post,
@@ -4678,6 +4809,10 @@ def resolve_inquiry_email_target(
 
     target, score = pick_best_email_for_inquiry(candidates, site)
     method = "rules" if target else "none"
+    if not target and candidates:
+        ws_target, ws_score = pick_best_email_from_website_scrape(candidates, site)
+        if ws_target:
+            target, score, method = ws_target, ws_score, "website_inbox"
     if target and not is_valid_retail_store_builder_contact(
         email=target, url=site, name=company_name, text=snippet
     ):
@@ -4976,7 +5111,10 @@ def _process_email_jobs(
     ignore_send_window: bool = False,
 ) -> None:
     persist_progress(all_rows, cache, logger, reason="vor Mailversand")
-    email_jobs = build_email_jobs_from_cache_json(logger, force_resend=force_resend)
+    sync_pipeline_rows_to_contacts_cache(all_rows, cache)
+    email_jobs = build_email_jobs_from_cache_json(
+        logger, force_resend=force_resend, cache=cache
+    )
     email_jobs.sort(key=lambda x: x.get("contact_quality_score", 0), reverse=True)
     today, sent_today, remaining = get_remaining_daily_email_limit(cache)
     if remaining <= 0:

@@ -12,6 +12,24 @@ except ImportError:  # pragma: no cover
 
 MIN_EMAIL_SCORE_FOR_SEND = 35
 
+# Skrzynki ogólne akceptowane, gdy adres pochodzi ze strony www firmy (np. info@k-in.de).
+GENERIC_INQUIRY_LOCAL_PARTS = frozenset(
+    {
+        "info",
+        "kontakt",
+        "office",
+        "mail",
+        "anfrage",
+        "anfragen",
+        "verkauf",
+        "vertrieb",
+        "biuro",
+        "hello",
+        "service",
+        "projekt",
+    }
+)
+
 AGGREGATOR_EMAIL_DOMAINS = frozenset(
     {
         "facebook.com",
@@ -238,6 +256,25 @@ def pick_best_email_for_inquiry(
     if score < MIN_EMAIL_SCORE_FOR_SEND or is_unsuitable_inquiry_email(best):
         return "", score
     return best, score
+
+
+def pick_best_email_from_website_scrape(
+    candidates: list[str], website_url: str
+) -> tuple[str, int]:
+    """
+    Luźniejszy wybór dla maili znalezionych na stronie firmy (kampania GU).
+    Akceptuje info@ / kontakt@ mimo innej domeny (skrócona marka, np. k-in.de).
+    """
+    ranked = rank_email_candidates(candidates, website_url)
+    if not ranked:
+        return "", 0
+    best, score = ranked[0]
+    if is_unsuitable_inquiry_email(best):
+        return "", score
+    local = best.split("@", 1)[0].strip().lower()
+    if local in GENERIC_INQUIRY_LOCAL_PARTS and score >= 6:
+        return best, max(score, MIN_EMAIL_SCORE_FOR_SEND)
+    return "", score
 
 
 def needs_gemini_email_arbitration(candidates: list[str], website_url: str) -> bool:
