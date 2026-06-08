@@ -2387,8 +2387,13 @@ def reset_serper_daily_for_discovery(cache: dict) -> None:
     daily[today] = 0
     flags = cache.setdefault("serper_limit_reached", {})
     flags.pop(today, None)
+    exhausted = cache.setdefault("serper_api_exhausted", {})
+    if exhausted.pop(today, None):
+        parts_ex = [f"serper_api_exhausted wyczyszczone ({today})"]
+    else:
+        parts_ex = []
     n_serper, n_discovery = clear_serper_search_caches(cache)
-    if old or n_serper or n_discovery:
+    if old or n_serper or n_discovery or parts_ex:
         parts = []
         if old:
             parts.append(
@@ -2398,6 +2403,7 @@ def reset_serper_daily_for_discovery(cache: dict) -> None:
             parts.append(
                 f"cache: serper={n_serper}, serper_discovery={n_discovery}"
             )
+        parts.extend(parts_ex)
         console_step(f"Serper-Reset ({today}): " + "; ".join(parts))
 
 
