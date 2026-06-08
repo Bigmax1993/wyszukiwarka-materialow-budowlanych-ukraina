@@ -6077,7 +6077,14 @@ def _run_smoke_tests() -> None:
         "Generalunternehmer Filialbau Supermarkt Neubau. "
         "Wir bauen Discounter im Einzelhandel."
     )
-    assert ok_ohne and reason_ohne == "gu_filialbau_kontext"
+    assert not ok_ohne and reason_ohne == "kein_markt_nachweis"
+    ok_opis, _, reason_opis = page_mentions_retail_store_projects(
+        "Generalunternehmer Filialbau. Wir realisieren Neubau Supermarkt "
+        "für Discounter — Projektbeschreibung mit Details."
+    )
+    assert ok_opis and (
+        reason_opis == "markt_referenz_nachweis" or reason_opis.startswith("referenz")
+    )
     ok_nur_ref, _, reason_nur = page_mentions_retail_store_projects(
         "Generalunternehmer Filialbau. Referenzen Hallenbau und Bürobau — keine Supermarktprojekte."
     )
@@ -6098,7 +6105,7 @@ def _run_smoke_tests() -> None:
     )
     assert not ok_shop and reason_shop == "einzelhandel_betrieb_kein_bau"
     assert "schlüsselfertig" in RETAIL_BUILD_KEYWORDS
-    assert len(SERPER_DISCOVERY_TERMS) >= 60
+    assert len(SERPER_DISCOVERY_TERMS) >= 500
     assert "ladeneinrichtung" in SERPER_NEGATIVE_TERMS
     assert "11880.com" in SERPER_BAD_DOMAINS
     from http_page_guard import is_waf_blocked
