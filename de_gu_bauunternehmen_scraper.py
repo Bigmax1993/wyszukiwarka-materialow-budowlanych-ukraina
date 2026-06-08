@@ -180,6 +180,7 @@ from retail_store_builder_filter import (
     portfolio_negates_market_projects,
     is_cache_contact_not_store_builder,
     is_generalunternehmer,
+    qualifies_as_gu_for_campaign,
     is_loose_serper_discovery_candidate,
     is_serper_only_pending_candidate,
     is_media_publisher_contact,
@@ -248,7 +249,7 @@ SERPER_PLACES_API_URL = "https://google.serper.dev/places"
 SERPER_COUNTRY = "de"
 SERPER_LANGUAGE = "de"
 SERPER_TIMEOUT = 20
-SERPER_DAILY_LIMIT = 200
+SERPER_DAILY_LIMIT = 1900
 _serper_limit_env = (os.environ.get("SERPER_DAILY_LIMIT") or "").strip()
 if _serper_limit_env:
     try:
@@ -1478,7 +1479,7 @@ def _contact_context_text(row: dict) -> str:
 
 def _row_has_gu_signal(row: dict) -> bool:
     text = _contact_context_text(row)
-    ok, _ = is_generalunternehmer(text)
+    ok, _ = qualifies_as_gu_for_campaign(text)
     return ok
 
 
@@ -2857,7 +2858,7 @@ def _is_small_ladenbau_specialist(
         return False
     blob = (page_text or "").lower()
     if REQUIRE_GENERALUNTERNEHMER:
-        gu_ok, _ = is_generalunternehmer(
+        gu_ok, _ = qualifies_as_gu_for_campaign(
             f"{company_name or ''} {website or ''} {page_text or ''}"
         )
         if not gu_ok:
@@ -2914,7 +2915,7 @@ def page_mentions_retail_store_projects(text: str) -> tuple[bool, list[str], str
     if is_retail_store_operator_contact(text=low):
         return False, [], "einzelhandel_betrieb_kein_bau"
     if REQUIRE_GENERALUNTERNEHMER:
-        gu_ok, _ = is_generalunternehmer(low)
+        gu_ok, _ = qualifies_as_gu_for_campaign(low)
         if not gu_ok:
             return False, [], "kein_generalunternehmer"
     if not mentions_retail_store_build_activity_core(low):
@@ -2931,7 +2932,7 @@ def page_mentions_retail_store_projects(text: str) -> tuple[bool, list[str], str
     has_build = any(k in low for k in RETAIL_BUILD_KEYWORDS)
     has_ref = has_retail_references_or_portfolio(low)
     has_trade = any(k in low for k in RETAIL_TRADE_ACTIVITY_KEYWORDS)
-    has_gu_bau, _ = is_generalunternehmer(low)
+    has_gu_bau, _ = qualifies_as_gu_for_campaign(low)
     has_umbau = any(
         k in low
         for k in (
@@ -3207,7 +3208,7 @@ def _run_gemini_discovery_supplement(
 
 
 def _finalize_verification_result(result: dict, blob: str) -> dict:
-    gu_ok, gu_marker = is_generalunternehmer(blob)
+    gu_ok, gu_marker = qualifies_as_gu_for_campaign(blob)
     result["is_gu"] = gu_ok
     result["gu_marker"] = gu_marker
     if result.get("verified") and REQUIRE_GENERALUNTERNEHMER and not gu_ok:
@@ -6555,10 +6556,11 @@ def _run_smoke_tests() -> None:
         ]
     )
     assert len(rows_export) == 1 and rows_export[0].get("E-mail") == ""
-    ok_laden_only, _, reason_laden_only = page_mentions_retail_store_projects(
+    ok_laden_only, chains_laden_only, reason_laden_only = page_mentions_retail_store_projects(
         "Wir realisieren Aldi und Rewe Filialneubau im Ladenbau in Sachsen. Referenzen."
     )
-    assert not ok_laden_only and reason_laden_only == "kein_generalunternehmer"
+    assert ok_laden_only and "aldi" in chains_laden_only
+    assert reason_laden_only.startswith("filialbau") or reason_laden_only.startswith("kette_")
     ok, chains, _ = page_mentions_retail_store_projects(
         "Generalunternehmer: Wir realisieren Aldi und Rewe Filialneubau im Ladenbau in Sachsen. Referenzen."
     )

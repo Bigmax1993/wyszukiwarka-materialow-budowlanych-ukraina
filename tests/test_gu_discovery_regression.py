@@ -308,7 +308,7 @@ class LooseSerperFilterRegression(unittest.TestCase):
             mentions_retail_store_build_activity_serper_discovery,
         )
 
-        text = "Partner Einzelhandelsbau GmbH Marktbau Referenz Rewe Bayern"
+        text = "Partner Filialbau GmbH Einzelhandel Neubau regional"
         self.assertTrue(mentions_retail_store_build_activity_serper_discovery(text))
         self.assertFalse(mentions_retail_store_build_activity_core(text))
 
@@ -782,6 +782,23 @@ class SmallLadenbauVerifyRegression(unittest.TestCase):
         self.assertIn("rewe", result.get("retail_chains") or [])
         self.assertTrue(result["is_small_firm"])
         self.assertTrue(result["is_gu"])
+
+    @patch.object(scraper, "ENABLE_GEMINI_PAGE_VERIFY", False)
+    @patch.object(scraper, "gather_website_text_for_verification")
+    def test_verify_accepts_filialbau_with_chain_without_gu_word(self, mock_gather):
+        mock_gather.return_value = (
+            "Wir realisieren Filialbau und Ladenbau für den Einzelhandel. "
+            "Referenzen: Neubau Rewe Filiale in Bayern. Portfolio Supermarktprojekte.",
+            ["https://markus-bau.de/referenzen"],
+        )
+        result = scraper.verify_company_on_website(
+            "Markus-Bau GmbH",
+            "https://markus-bau.de",
+            _LOGGER,
+            {},
+        )
+        self.assertTrue(result["is_gu"])
+        self.assertIn("rewe", result.get("retail_chains") or [])
 
     @patch.object(scraper, "ENABLE_GEMINI_PAGE_VERIFY", False)
     @patch.object(scraper, "gather_website_text_for_verification")

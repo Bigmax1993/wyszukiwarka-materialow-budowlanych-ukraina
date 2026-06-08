@@ -387,10 +387,57 @@ def is_generalunternehmer(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+def qualifies_as_gu_for_campaign(text: str) -> tuple[bool, str]:
+    """
+    GU w sensie kampanii: jawny Generalunternehmer LUB wykonawca Filialbau/Ladenbau
+    z kontekstem marketów (referencje / portfolio / sieć) — bez wymogu słowa „GU” na www.
+    """
+    low = (text or "").lower()
+    if is_excluded_non_gu_role(low):
+        return False, "excluded_non_gu_role"
+    ok, marker = is_generalunternehmer(low)
+    if ok:
+        return True, (marker or "generalunternehmer").strip()
+    if not REQUIRE_GENERALUNTERNEHMER:
+        if any(m in low for m in FILIALBAU_SPECIALIST_MARKERS):
+            return True, "filialbau"
+        if any(m in low for m in GU_BUILDER_MARKERS):
+            return True, "bauunternehmen"
+        return False, ""
+
+    if not _has_retail_store_context(low):
+        return False, ""
+
+    has_filialbau = any(m in low for m in FILIALBAU_SPECIALIST_MARKERS)
+    has_bau_filial = any(m in low for m in ("bauunternehmen", "bauunternehmung")) and (
+        has_filialbau
+        or any(m in low for m in RETAIL_STORE_BUILD_MARKERS + RETAIL_STORE_UMBAU_MARKERS)
+    )
+    if not has_filialbau and not has_bau_filial:
+        return False, ""
+
+    chains = detect_required_retail_chains(low)
+    if not chains:
+        return False, ""
+
+    has_build = any(m in low for m in RETAIL_STORE_BUILD_MARKERS + RETAIL_STORE_UMBAU_MARKERS)
+    has_ref = has_retail_references_or_portfolio(low)
+
+    if has_ref or has_build or "referenz" in low:
+        return True, "filialbau_handelskette"
+
+    if _has_loose_filialbau_reference_evidence(low):
+        return True, "filialbau_referenz"
+
+    return False, ""
+
+
 def is_gu_or_retail_build_specialist(text: str) -> bool:
     low = (text or "").lower()
+    if is_excluded_non_gu_role(low):
+        return False
     if REQUIRE_GENERALUNTERNEHMER:
-        ok, _ = is_generalunternehmer(low)
+        ok, _ = qualifies_as_gu_for_campaign(low)
         return ok
     if any(m in low for m in GU_BUILDER_MARKERS):
         return True
