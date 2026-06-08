@@ -1,0 +1,169 @@
+name: GU reprocess cache bez Serper
+
+# Kroki 0–6 bez Serper API: pobierz wybrany artefakt wed → verify www → backfill → rebuild → Drive.
+# Nie uruchamiaj GU sobota discovery (kasuje serper_discovery i wymaga API).
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: "Run ID GU sobota discovery z danymi (np. 27140798115)"
+        required: false
+        default: "27140798115"
+        type: string
+      artifact_name:
+        description: "Nazwa artefaktu źródłowego"
+        required: false
+        default: "de-gu-wyniki-wed"
+        type: string
+      sync_drive:
+        description: "Upload Excel na Google Drive po zakończeniu"
+        type: boolean
+        default: true
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  SCRAPER_TIMEZONE: Europe/Warsaw
+  KANBUD_PROJECT_ROOT: ${{ github.workspace }}/libs
+
+jobs:
+  reprocess:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      # Bez SERPER_API_KEY — www i Excel tylko z cache JSON (URL-e z discovery)
+      GOOGLE_AI_STUDIO_API_KEY: ${{ secrets.GOOGLE_AI_STUDIO_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: |
+          pip install -r requirements.txt
+          python -m playwright install chromium --with-deps
+          pip install -r requirements-drive.txt
+
+      - name: Resolve artifact run (krok 0)
+        id: artifact_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FORCED="${{ inputs.artifact_run_id }}"
+          ARTIFACT="${{ inputs.artifact_name }}"
+          if [ -n "$FORCED" ]; then
+            RUN_ID="$FORCED"
+            if ! gh api "repos/${{ github.repository }}/actions/runs/${RUN_ID}" --jq .id >/dev/null 2>&1; then
+              echo "::error::Nie znaleziono run ID: ${RUN_ID}"
+              exit 1
+            fi
+          else
+            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+              --paginate --jq ".artifacts[] | select(.name==\"${ARTIFACT}\" and .expired==false) | .workflow_run.id" | head -1)
+            if [ -z "$RUN_ID" ]; then
+              echo "::error::Brak artefaktu ${ARTIFACT}"
+              exit 1
+            fi
+          fi
+          echo "run-id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+          echo "artifact=${ARTIFACT}" >> "$GITHUB_OUTPUT"
+          echo "Pobieram ${ARTIFACT} z run ${RUN_ID}"
+
+      - name: Download cache from sobota (krok 1–2)
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.artifact_run.outputs.artifact }}
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.artifact_run.outputs.run-id }}
+          path: .
+
+      - name: Cache stats przed reprocess
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("Wyniki/de_gu_bauunternehmen_cache.json")
+          if not p.exists():
+              raise SystemExit("Brak Wyniki/de_gu_bauunternehmen_cache.json w artefakcie")
+          c = json.loads(p.read_text(encoding="utf-8"))
+          contacts = c.get("contacts") or {}
+          sd = c.get("serper_discovery") or {}
+          rows = sum(len((v or {}).get("rows") or []) for v in sd.values() if isinstance(v, dict))
+          verified = sum(1 for i in contacts.values() if isinstance(i, dict) and i.get("retail_verified"))
+          emails = sum(1 for i in contacts.values() if isinstance(i, dict) and (i.get("email_target") or "").strip())
+          print(f"PRZED: contacts={len(contacts)}, verified={verified}, z_mailem={emails}")
+          print(f"       serper_discovery={len(sd)} fraz, {rows} URL-i w cache")
+          if len(contacts) == 0:
+              print("::warning::contacts=0 — wybierz starszy artifact_run_id (np. 27140798115)")
+          PY
+
+      - name: Verify www + backfill + rebuild (krok 3–5)
+        run: |
+          python de_gu_bauunternehmen_scraper.py --verify-pending-contacts --reverify-all-contacts
+          python de_gu_bauunternehmen_scraper.py --backfill-emails-from-cache
+          python de_gu_bauunternehmen_scraper.py --rebuild-from-cache
+
+      - name: Cache stats po reprocess (krok 6)
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          c = json.loads(Path("Wyniki/de_gu_bauunternehmen_cache.json").read_text(encoding="utf-8"))
+          contacts = c.get("contacts") or {}
+          verified = sum(1 for i in contacts.values() if isinstance(i, dict) and i.get("retail_verified"))
+          emails = sum(1 for i in contacts.values() if isinstance(i, dict) and (i.get("email_target") or "").strip())
+          xlsx = Path("Wyniki/de_gu_bauunternehmen_kontakte.xlsx").exists()
+          print(f"PO: contacts={len(contacts)}, verified={verified}, z_mailem={emails}, excel={xlsx}")
+          PY
+
+      - name: Upload Wyniki artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: de-gu-wyniki-thu
+          path: |
+            Wyniki/
+            wyslane/
+
+      - name: Validate GDRIVE credentials
+        if: inputs.sync_drive
+        env:
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GDRIVE_OAUTH_REFRESH_TOKEN }}
+          GDRIVE_OAUTH_CLIENT_ID: ${{ secrets.GDRIVE_OAUTH_CLIENT_ID }}
+          GDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.GDRIVE_OAUTH_CLIENT_SECRET }}
+        run: |
+          python -c "
+          import os, json, sys
+          refresh = (os.environ.get('GDRIVE_OAUTH_REFRESH_TOKEN') or '').strip()
+          cid = (os.environ.get('GDRIVE_OAUTH_CLIENT_ID') or '').strip()
+          csec = (os.environ.get('GDRIVE_OAUTH_CLIENT_SECRET') or '').strip()
+          if refresh and cid and csec:
+              print('OK: OAuth')
+              sys.exit(0)
+          raw = (os.environ.get('GDRIVE_SERVICE_ACCOUNT_JSON') or '').strip()
+          if not raw:
+              print('::warning::Brak credentials Drive — pomijam upload')
+              sys.exit(1)
+          j = json.loads(raw)
+          if j.get('type') != 'service_account':
+              sys.exit(1)
+          print('OK:', j.get('client_email'))
+          "
+
+      - name: Upload Wyniki to Google Drive
+        if: inputs.sync_drive
+        env:
+          GDRIVE_FOLDER_ID: "1tP8oUi72t4EHDbE9GnHFdvfNtNsJe4xf"
+          GDRIVE_VERSION_XLSX: "1"
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_OAUTH_CLIENT_ID: ${{ secrets.GDRIVE_OAUTH_CLIENT_ID }}
+          GDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.GDRIVE_OAUTH_CLIENT_SECRET }}
+          GDRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GDRIVE_OAUTH_REFRESH_TOKEN }}
+          GDRIVE_IMPERSONATE_EMAIL: ${{ secrets.GDRIVE_IMPERSONATE_EMAIL }}
+          GDRIVE_SHARED_DRIVE_ID: ${{ secrets.GDRIVE_SHARED_DRIVE_ID }}
+        run: python scripts/gdrive_upload_wyniki.py --campaign-dir .

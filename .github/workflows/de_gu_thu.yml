@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "30 3 * * 0"
   workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: "Opcjonalnie run ID wed (np. 27140798115). Puste = najnowszy wed."
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -37,8 +42,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
-            --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-wed" and .expired==false) | .workflow_run.id' | head -1)
+          FORCED="${{ github.event_name == 'workflow_dispatch' && inputs.artifact_run_id || '' }}"
+          if [ -n "$FORCED" ]; then
+            RUN_ID="$FORCED"
+          else
+            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-wed" and .expired==false) | .workflow_run.id' | head -1)
+          fi
           if [ -z "$RUN_ID" ]; then
             echo "::error::Brak artefaktu de-gu-wyniki-wed (uruchom najpierw GU sobota discovery)"
             exit 1
