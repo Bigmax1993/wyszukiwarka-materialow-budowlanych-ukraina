@@ -148,7 +148,7 @@ python de_gu_bauunternehmen_scraper.py --run-config run_config\welle_nrw_by_bw.j
 
 |-------|---------|
 
-| Serper | 2000 zapytań / dzień |
+| Serper | 1500 zapytań / dzień |
 
 | E-mail | 300 / dzień kalendarzowy, 2 / domena / dzień (pon 300 + wt 300) |
 

@@ -245,7 +245,7 @@ SERPER_PLACES_API_URL = "https://google.serper.dev/places"
 SERPER_COUNTRY = "de"
 SERPER_LANGUAGE = "de"
 SERPER_TIMEOUT = 20
-SERPER_DAILY_LIMIT = 2000
+SERPER_DAILY_LIMIT = 1500
 _serper_limit_env = (os.environ.get("SERPER_DAILY_LIMIT") or "").strip()
 if _serper_limit_env:
     try:

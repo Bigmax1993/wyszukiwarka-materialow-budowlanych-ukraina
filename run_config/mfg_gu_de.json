@@ -24,7 +24,7 @@
   "require_generalunternehmer": true,
   "require_market_projects_in_portfolio": true,
   "require_website_references_or_portfolio": true,
-  "serper_daily_limit": 2000,
+  "serper_daily_limit": 1500,
   "serper_unlimited": false,
   "enable_auto_email": false,
   "enable_gemini_discovery_terms": true,
