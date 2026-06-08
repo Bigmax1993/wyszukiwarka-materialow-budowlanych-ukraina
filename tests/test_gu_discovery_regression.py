@@ -279,6 +279,23 @@ class SerperOnlyFilterRegression(unittest.TestCase):
             is_cache_contact_not_store_builder("https://zd-bau.de", info)
         )
 
+    def test_reverify_all_includes_rejected_cache_contacts(self):
+        cache = scraper._empty_cache()
+        cache["contacts"] = {
+            "https://a.de": {
+                "verification_reason": "keine_handelskette",
+                "retail_verified": False,
+            },
+            "https://b.de": {
+                "verification_reason": scraper.PENDING_WWW_VERIFY_REASON,
+                "retail_verified": False,
+            },
+        }
+        pending_only = scraper.collect_urls_for_www_reverify(cache, reverify_all=False)
+        all_urls = scraper.collect_urls_for_www_reverify(cache, reverify_all=True)
+        self.assertEqual(pending_only, ["https://b.de"])
+        self.assertEqual(set(all_urls), {"https://a.de", "https://b.de"})
+
     def test_excel_roundtrip_restores_pending(self):
         rec = {
             "Nazwa firmy": "BAUTAL GU GmbH",

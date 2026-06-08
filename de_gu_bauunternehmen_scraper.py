@@ -4856,45 +4856,75 @@ def backfill_emails_in_cache(cache: dict, logger: logging.Logger) -> dict:
     return stats
 
 
+def collect_urls_for_www_reverify(
+    cache: dict,
+    all_rows: list | None = None,
+    *,
+    reverify_all: bool = False,
+) -> list[str]:
+    """URL do ponownej weryfikacji www: pending lub cały cache (+ wiersze pipeline)."""
+    contacts = cache.get("contacts") or {}
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    def _add(url: str) -> None:
+        u = (url or "").strip()
+        if u and u not in seen:
+            seen.add(u)
+            urls.append(u)
+
+    if reverify_all:
+        for url, info in contacts.items():
+            if isinstance(info, dict):
+                _add(url)
+        for row in all_rows or []:
+            _add((row.get("url") or row.get("www") or "").strip())
+        return urls
+
+    for url, info in contacts.items():
+        if not isinstance(info, dict):
+            continue
+        if (info.get("verification_reason") or "").strip() == PENDING_WWW_VERIFY_REASON:
+            _add(url)
+    for row in all_rows or []:
+        url = (row.get("url") or row.get("www") or "").strip()
+        if not url or url in seen:
+            continue
+        reason = (row.get("verification_reason") or "").strip()
+        if reason == PENDING_WWW_VERIFY_REASON and not row.get("retail_verified"):
+            _add(url)
+    return urls
+
+
 def verify_pending_contacts(
     cache: dict,
     logger: logging.Logger,
     *,
     all_rows: list | None = None,
+    reverify_all: bool = False,
 ) -> dict:
-    """WWW-verify rekordów ze statusem pending_www_verify (niedziela po serper-only)."""
+    """WWW-verify: pending po sobotnim Serper lub ponownie cały cache (--reverify-all-contacts)."""
     contacts = cache.setdefault("contacts", {})
-    pending_urls: list[str] = []
-    seen_pending: set[str] = set()
-    for url, info in contacts.items():
-        if not isinstance(info, dict):
-            continue
-        reason = (info.get("verification_reason") or "").strip()
-        if reason == PENDING_WWW_VERIFY_REASON:
-            if url not in seen_pending:
-                pending_urls.append(url)
-                seen_pending.add(url)
-    if all_rows:
-        for row in all_rows:
-            url = (row.get("url") or row.get("www") or "").strip()
-            if not url or url in seen_pending:
-                continue
-            reason = (row.get("verification_reason") or "").strip()
-            if reason == PENDING_WWW_VERIFY_REASON and not row.get("retail_verified"):
-                pending_urls.append(url)
-                seen_pending.add(url)
+    pending_urls = collect_urls_for_www_reverify(
+        cache, all_rows, reverify_all=reverify_all
+    )
 
     stats = {
         "pending": len(pending_urls),
         "verified": 0,
         "rejected": 0,
         "errors": 0,
+        "reverify_all": reverify_all,
     }
     if not pending_urls:
-        console_step("Verify pending: brak rekordów do weryfikacji www")
+        label = "cache" if reverify_all else "pending"
+        console_step(f"Verify www: brak rekordów ({label})")
         return stats
 
-    console_step(f"Verify pending: {len(pending_urls)} URL do weryfikacji www")
+    console_step(
+        f"Verify www: {len(pending_urls)} URL"
+        + (" (cały cache — ponowna weryfikacja)" if reverify_all else " (pending)")
+    )
     rows_by_url = index_all_rows_by_url(all_rows or [])
     for url in pending_urls:
         row = rows_by_url.get(url)
@@ -6636,7 +6666,18 @@ if __name__ == "__main__":
             logger = setup_logging()
             cache = load_cache(logger)
             all_rows, _seen_from_file = load_existing_output(OUTPUT_FILE, logger)
-            stats = verify_pending_contacts(cache, logger, all_rows=all_rows)
+            reverify_all = "--reverify-all-contacts" in sys.argv
+            if reverify_all:
+                print(
+                    "[TRYB] Ponowna weryfikacja www wszystkich firm z cache "
+                    "(nowe filtry GU / sieci / Impressum)."
+                )
+            stats = verify_pending_contacts(
+                cache,
+                logger,
+                all_rows=all_rows,
+                reverify_all=reverify_all,
+            )
             persist_progress(all_rows, cache, logger, reason="verify_pending_contacts")
             from gu_bundesland_rotation import (
                 commit_rotation_after_run,
@@ -6663,8 +6704,9 @@ if __name__ == "__main__":
             else:
                 rot_msg += " — land bez przesunięcia"
             print(
-                f"[VERIFY] pending={stats['pending']}, verified={stats['verified']}, "
-                f"rejected={stats['rejected']}, errors={stats['errors']}\n"
+                f"[VERIFY] urls={stats['pending']}, verified={stats['verified']}, "
+                f"rejected={stats['rejected']}, errors={stats['errors']}, "
+                f"reverify_all={stats.get('reverify_all', False)}\n"
                 f"  Excel → {OUTPUT_FILE} ({len(all_rows)} wierszy)\n"
                 f"  {rot_msg}"
             )
