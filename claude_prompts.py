@@ -49,18 +49,31 @@ def prioritize_page_text_for_verify(
     raw = (page_text or "").strip()
     if len(raw) <= max_chars:
         return raw
-    lines = [ln.strip() for ln in re.split(r"[\n\r]+", raw) if ln.strip()]
-    if not lines:
-        return raw[:max_chars]
-    priority: list[str] = []
-    other: list[str] = []
-    for ln in lines:
-        low = ln.lower()
-        if any(k in low for k in _PAGE_VERIFY_TEXT_PRIORITY):
-            priority.append(ln)
-        else:
-            other.append(ln)
-    merged = " ".join(priority + other)
+    if "=== http" in raw:
+        sections = re.split(r"(?=\n=== https?://)", "\n" + raw)
+        sections = [s.strip() for s in sections if s.strip()]
+        priority_sec: list[str] = []
+        other_sec: list[str] = []
+        for sec in sections:
+            low = sec.lower()
+            if any(k in low for k in _PAGE_VERIFY_TEXT_PRIORITY):
+                priority_sec.append(sec)
+            else:
+                other_sec.append(sec)
+        merged = "\n\n".join(priority_sec + other_sec)
+    else:
+        lines = [ln.strip() for ln in re.split(r"[\n\r]+", raw) if ln.strip()]
+        if not lines:
+            return raw[:max_chars]
+        priority: list[str] = []
+        other: list[str] = []
+        for ln in lines:
+            low = ln.lower()
+            if any(k in low for k in _PAGE_VERIFY_TEXT_PRIORITY):
+                priority.append(ln)
+            else:
+                other.append(ln)
+        merged = " ".join(priority + other)
     if len(merged) <= max_chars:
         return merged
     return merged[: max_chars - 3] + "..."
@@ -89,7 +102,8 @@ WICHTIG — „Generalunternehmer" steht NICHT immer auf der Website!
 Entscheidend sind PROJEKTNACHWEISE für Märkte/Filialen, nicht das Wort GU.
 
 AUFGABE
-Lies den Website-Auszug (inkl. Bildpfade, alt-Texte, Galerie-Beschriftungen). Passt die Firma?
+Lies den vollständigen Website-Auszug (alle gecrawlten Unterseiten, markiert mit „=== URL ===").
+Inkl. Bildpfade, alt-Texte, Galerie-Beschriftungen, Karriere-Stellen. Passt die Firma?
 Antworte NUR mit einem JSON-Objekt — kein Markdown, kein Kommentar.
 
 WAS ZÄHLT ALS NACHWEIS (Referenzen / Portfolio — KEIN fester Tab nötig)

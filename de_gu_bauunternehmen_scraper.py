@@ -4,7 +4,7 @@ Serper API – DE bundesweit: Generalunternehmer (GU), którzy stawiają sklepy/
 lub robią przebudowy/umbau i modernizację filii (Rewe, Aldi, Kaufland, Netto, Penny, Edeka).
 Nicht: Einzelhandels-Märkte als Betreiber, keine Urzędy/Portale.
 E-mail MFG + PPTX nur in diesem Modul (send_email_de_gu).
-Discovery i kontakty: Serper + requests + BeautifulSoup. www: parse HTML + regex/mailto na końcu. Przed Excel: Claude row cleanup + reguły.
+Discovery: Serper. www: pełny crawl domeny (requests+BS4) → Claude verify → kontakty z tego samego crawlu (regex/mailto). Przed Excel: Claude cleanup.
 Bez Selenium / Google Maps. Baner cookie: Playwright (tylko „Akceptuj”).
 Jupyter Lab: komórka 1 = %pip install …, komórka 2 = ten plik, komórka 3 = run_in_jupyter(…).
 """
@@ -484,7 +484,8 @@ def _sync_claude_limits_from_module() -> None:
 _sync_claude_limits_from_module()
 CLAUDE_DISCOVERY_MIN_GAIN = 1
 CLAUDE_DISCOVERY_CACHE_DAYS = 7
-MAX_PAGES_FOR_RETAIL_VERIFICATION = 8
+# Pełny crawl domeny przed Claude (limit w website_full_crawl.MAX_SITE_CRAWL_PAGES)
+MAX_PAGES_FOR_RETAIL_VERIFICATION = 8  # legacy — testy / kompatybilność
 ENABLE_SERPER_PLACES_ENDPOINT = True
 LARGE_COMPANY_DOMAINS = frozenset(
     {
@@ -3046,28 +3047,151 @@ def sort_verification_urls(urls: list[str]) -> list[str]:
     return sorted(urls, key=key)
 
 
-def gather_website_text_for_verification(
-    website: str, logger: logging.Logger
-) -> tuple[str, list[str]]:
-    """Pobiera tekst ze strony głównej i kilku podstron (referenzen/projekte) — przed kontaktami."""
+def _fetch_page_html(url: str, logger: logging.Logger) -> str:
+    """Pobierz HTML jednej strony (requests + retry)."""
+    if not (url or "").strip().lower().startswith(("http://", "https://")):
+        return ""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+    }
+    try:
+        r = request_with_retry(
+            requests.get,
+            url,
+            logger,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+            waf_skip=True,
+        )
+        return r.text or ""
+    except Exception as e:
+        from http_page_guard import PageAccessBlocked
+
+        if isinstance(e, PageAccessBlocked):
+            logger.info("Strona pominięta (WAF/Cloudflare): %s", url)
+        else:
+            logger.info("Seitenabruf fehlgeschlagen %s: %s", url, e)
+        return ""
+
+
+def _parse_html_page_for_crawl(
+    url: str, html: str, logger: logging.Logger, cache: dict | None
+) -> dict:
+    parsed = parse_contacts_from_html(url, html, logger=logger, cache=cache)
+
+    def _parse_html_playwright(page_url: str, page_html: str) -> dict:
+        return parse_contacts_from_html(
+            page_url, page_html, logger=logger, cache=cache
+        )
+
+    parsed = apply_playwright_cookie_fallback(
+        url, logger, html, parsed, _parse_html_playwright, on_step=console_step
+    )
+    return {
+        "emails": parsed["emails"],
+        "phones": parsed["phones"],
+        "company_name": parsed.get("company_name") or "",
+        "contact_urls": parsed["contact_urls"],
+        "page_text": parsed.get("page_text", ""),
+    }
+
+
+def _crawl_website_for_company(
+    website: str, logger: logging.Logger, cache: dict | None
+):
+    from website_full_crawl import (
+        WebsiteCrawlResult,
+        crawl_entire_website,
+        format_crawl_text_for_claude,
+    )
+
     website = normalize_website(website)
     if not website:
-        return "", []
-    console_step(f"WWW-Prüfung (GU Filialbau/Umbau Markt): {website}")
-    home = parse_contacts_from_page(website, logger)
-    parts = [home.get("page_text") or ""]
-    visited = {website}
-    extra_urls = sort_verification_urls(home.get("contact_urls") or [])
-    for u in extra_urls:
-        if len(visited) >= MAX_PAGES_FOR_RETAIL_VERIFICATION:
-            break
-        if u in visited:
-            continue
-        visited.add(u)
-        sub = parse_contacts_from_page(u, logger)
-        if sub.get("page_text"):
-            parts.append(sub["page_text"])
-    return " ".join(parts), list(visited)
+        return WebsiteCrawlResult(), ""
+
+    crawl_cache = (cache or {}).setdefault("website_crawl", {})
+    if website in crawl_cache:
+        cached = crawl_cache[website]
+        if isinstance(cached, WebsiteCrawlResult):
+            console_step(
+                f"Website-Crawl Cache: {website} ({len(cached.urls_visited)} Seiten)"
+            )
+            return cached, format_crawl_text_for_claude(cached)
+
+    console_step(f"Website-Crawl (gesamte Domain): {website}")
+
+    def _parse(url: str, html: str) -> dict:
+        return _parse_html_page_for_crawl(url, html, logger, cache)
+
+    result = crawl_entire_website(
+        website,
+        logger,
+        fetch_page_html=lambda u: _fetch_page_html(u, logger),
+        parse_html_page=_parse,
+        normalize_website=normalize_website,
+        on_step=console_step,
+    )
+    crawl_cache[website] = result
+    console_step(
+        f"Website-Crawl fertig: {len(result.urls_visited)} Seiten"
+        + (" (Limit)" if result.capped else "")
+    )
+    return result, format_crawl_text_for_claude(result)
+
+
+def merge_contacts_from_crawl(crawl, website: str) -> dict:
+    """Złącz e-maile/telefony ze wszystkich podstron po pełnym crawlu."""
+    emails: list[str] = []
+    impressum_emails: list[str] = []
+    phones: list[str] = []
+    company_candidates: list[str] = []
+    source_urls: list[str] = []
+    text_parts: list[str] = []
+
+    for url in crawl.urls_visited:
+        details = crawl.pages.get(url) or {}
+        from_impressum = _is_impressum_url(url)
+        for e in details.get("emails") or []:
+            if from_impressum and e not in impressum_emails:
+                impressum_emails.append(e)
+            if e not in emails:
+                emails.append(e)
+        for p in details.get("phones") or []:
+            if p not in phones:
+                phones.append(p)
+        if details.get("company_name"):
+            company_candidates.append(details["company_name"])
+        if details.get("page_text"):
+            text_parts.append(details["page_text"])
+        if url not in source_urls:
+            source_urls.append(url)
+
+    if impressum_emails:
+        console_step(
+            f"Impressum: {len(impressum_emails)} E-Mail(s) — "
+            f"{', '.join(impressum_emails[:3])}"
+        )
+    page_snippet = _truncate_page_snippet(" ".join(text_parts))
+    return {
+        "emails": emails,
+        "impressum_emails": impressum_emails,
+        "phones": phones,
+        "company_name": _pick_best_company_name(company_candidates, website),
+        "website": website,
+        "source_urls": source_urls,
+        "page_snippet": page_snippet,
+    }
+
+
+def gather_website_text_for_verification(
+    website: str, logger: logging.Logger, cache: dict | None = None
+) -> tuple[str, list[str]]:
+    """Pełny crawl domeny → tekst wszystkich podstron dla Claude."""
+    _crawl, page_text = _crawl_website_for_company(website, logger, cache)
+    return page_text, list(_crawl.urls_visited)
 
 
 def _needs_claude_discovery_supplement(
@@ -3233,7 +3357,9 @@ def verify_company_on_website(
     Wchodzi na stronę, sprawdza mała firma + sklepy dyskontowe.
     Zwraca m.in. verified, retail_chains, verification_reason, is_gu.
     """
-    page_text, pages_checked = gather_website_text_for_verification(website, logger)
+    page_text, pages_checked = gather_website_text_for_verification(
+        website, logger, cache
+    )
     blob = " ".join([page_text, serper_blob])
 
     if ENABLE_CLAUDE_PAGE_VERIFY:
@@ -4580,48 +4706,10 @@ def parse_contacts_from_page(
     if not (url or "").strip().lower().startswith(("http://", "https://")):
         return {"emails": [], "phones": [], "contact_urls": [], "page_text": ""}
     console_step(f"Lade Seite: {url}")
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        )
-    }
-    html = ""
-    empty = {"emails": [], "phones": [], "contact_urls": [], "page_text": ""}
-    try:
-        r = request_with_retry(
-            requests.get,
-            url,
-            logger,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT,
-            waf_skip=True,
-        )
-        html = r.text
-    except Exception as e:
-        from http_page_guard import PageAccessBlocked
-
-        if isinstance(e, PageAccessBlocked):
-            logger.info("Strona pominięta (WAF/Cloudflare): %s", url)
-            return empty
-        logger.info(f"Seitenabruf fehlgeschlagen {url}: {e}")
-    parsed = parse_contacts_from_html(url, html, logger=logger, cache=cache)
-
-    def _parse_html_playwright(page_url: str, page_html: str) -> dict:
-        return parse_contacts_from_html(
-            page_url, page_html, logger=logger, cache=cache
-        )
-
-    parsed = apply_playwright_cookie_fallback(
-        url, logger, html, parsed, _parse_html_playwright, on_step=console_step
-    )
-    return {
-        "emails": parsed["emails"],
-        "phones": parsed["phones"],
-        "company_name": parsed.get("company_name") or "",
-        "contact_urls": parsed["contact_urls"],
-        "page_text": parsed.get("page_text", ""),
-    }
+    html = _fetch_page_html(url, logger)
+    if not html:
+        return {"emails": [], "phones": [], "contact_urls": [], "page_text": ""}
+    return _parse_html_page_for_crawl(url, html, logger, cache)
 
 
 def _truncate_page_snippet(text: str, max_chars: int = PAGE_SNIPPET_MAX_CHARS) -> str:
@@ -4980,68 +5068,13 @@ def collect_contacts_from_website(
             "page_snippet": "",
         }
     console_step(f"Kontakte sammeln (nach WWW-Prüfung): {website}")
-    base = parse_contacts_from_page(website, logger, cache=cache)
-    emails = list(base["emails"])
-    impressum_emails: list[str] = []
-    phones = list(base["phones"])
-    company_candidates: list[str] = []
-    if base.get("company_name"):
-        company_candidates.append(base["company_name"])
-    source_urls = [website]
-    text_parts = [base.get("page_text") or ""]
-    discovered_links = sort_verification_urls(base.get("contact_urls") or [])
-    impressum_urls = collect_impressum_urls(website, discovered_links)[
-        :MAX_IMPRESSUM_GUESS_FETCH
-    ]
-    other_urls = collect_non_impressum_contact_urls(website, discovered_links)
-    seen_fetch: set[str] = {website}
+    crawl_cache = (cache or {}).get("website_crawl") or {}
+    crawl = crawl_cache.get(website)
+    if crawl is not None:
+        return merge_contacts_from_crawl(crawl, website)
 
-    def _merge_page_details(u: str, details: dict, *, from_impressum: bool) -> None:
-        nonlocal emails, impressum_emails, phones, company_candidates, text_parts, source_urls
-        for e in details["emails"]:
-            if from_impressum and e not in impressum_emails:
-                impressum_emails.append(e)
-            if e not in emails:
-                emails.append(e)
-        for p in details["phones"]:
-            if p not in phones:
-                phones.append(p)
-        if details.get("company_name"):
-            company_candidates.append(details["company_name"])
-        if details.get("page_text"):
-            text_parts.append(details["page_text"])
-        if u not in source_urls:
-            source_urls.append(u)
-
-    for u in impressum_urls:
-        if u in seen_fetch:
-            continue
-        seen_fetch.add(u)
-        console_step(f"Impressum prüfen: {u}")
-        details = parse_contacts_from_page(u, logger, cache=cache)
-        _merge_page_details(u, details, from_impressum=True)
-
-    for u in other_urls:
-        if u in seen_fetch:
-            continue
-        seen_fetch.add(u)
-        details = parse_contacts_from_page(u, logger, cache=cache)
-        _merge_page_details(u, details, from_impressum=False)
-
-    if impressum_emails:
-        console_step(
-            f"Impressum: {len(impressum_emails)} E-Mail(s) — {', '.join(impressum_emails[:3])}"
-        )
-    page_snippet = _truncate_page_snippet(" ".join(text_parts))
-    return {
-        "emails": emails,
-        "impressum_emails": impressum_emails,
-        "phones": phones,
-        "company_name": _pick_best_company_name(company_candidates, website),
-        "website": website,
-        "source_urls": source_urls,
-        "page_snippet": page_snippet,
-    }
+    crawl_result, _ = _crawl_website_for_company(website, logger, cache)
+    return merge_contacts_from_crawl(crawl_result, website)
 
 
 def _assemble_inquiry_email_body(company_name: str, opening: str = "") -> str:
