@@ -377,6 +377,11 @@ RETAIL_URL_PRIORITY_KEYWORDS = (
     "bauprojekt",
     "aktuelle-projekte",
     "objekte",
+    "karriere",
+    "stellen",
+    "jobs",
+    "career",
+    "auftraggeber",
 )
 
 # Typowe ścieżki Impressum (DE) — mail często tylko tam
@@ -418,6 +423,11 @@ RETAIL_CONTACT_LINK_KEYWORDS = (
     "anfrage",
     "leistungen",
     "bauleistungen",
+    "karriere",
+    "stellen",
+    "stellenangebot",
+    "jobs",
+    "career",
 )
 
 DE_OST_REGION_KEYWORDS = (

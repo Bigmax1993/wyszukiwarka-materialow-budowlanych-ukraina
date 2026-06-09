@@ -11,6 +11,7 @@ from retail_store_builder_filter import (
     REQUIRED_RETAIL_CHAIN_KEYWORDS,
     detect_required_retail_chains,
     has_market_project_evidence_on_website,
+    has_retail_context_without_named_chain,
     has_required_retail_chain_mention,
     is_excluded_non_gu_role,
     is_generalunternehmer,
@@ -125,7 +126,11 @@ def apply_page_verdict(
     ]
     blob_chains = detect_required_retail_chains(blob)
     chains = list(dict.fromkeys(llm_chains + blob_chains))
-    if not chains and not has_required_retail_chain_mention(blob):
+    if (
+        not chains
+        and not has_required_retail_chain_mention(blob)
+        and not has_retail_context_without_named_chain(blob)
+    ):
         return False, "keine_handelskette", []
 
     if require_small_firm and not llm.get("is_small_firm"):

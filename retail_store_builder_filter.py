@@ -39,6 +39,42 @@ def detect_required_retail_chains(text: str) -> list[str]:
 def has_required_retail_chain_mention(text: str) -> bool:
     return bool(detect_required_retail_chains(text))
 
+
+def has_retail_context_without_named_chain(text: str) -> bool:
+    """
+    Retail/Einzelhandel-Bauprojekte ohne zwingend Aldi/Rewe im Text.
+    Z. B. GU + Einzelhandel/Gewerbebau oder Auftraggeber + Discounter/Supermarkt.
+    """
+    low = (text or "").lower()
+    if has_required_retail_chain_mention(low):
+        return True
+    if is_excluded_non_gu_role(low):
+        return False
+    trade = (
+        _has_retail_store_context(low)
+        or any(m in low for m in (*RETAIL_STORE_BUILD_MARKERS, *RETAIL_STORE_UMBAU_MARKERS))
+        or "einzelhandel" in low
+        or " retail" in low
+        or "retail-" in low
+    )
+    if not trade:
+        return False
+    gu_ok, _ = qualifies_as_gu_for_campaign(low)
+    gu_text, _ = is_generalunternehmer(low)
+    bau_mit_einzelhandel = any(
+        m in low
+        for m in (
+            "generalunternehmer",
+            "bauunternehmen",
+            "gewerbebau",
+            " gu ",
+        )
+    ) and ("einzelhandel" in low or " retail" in low or low.startswith("retail"))
+    auftraggeber_retail = "auftraggeber" in low and trade
+    if gu_ok or gu_text or bau_mit_einzelhandel or auftraggeber_retail:
+        return True
+    return False
+
 STRICT_GU_MARKERS = (
     "generalunternehmer",
     "generalunternehmen",

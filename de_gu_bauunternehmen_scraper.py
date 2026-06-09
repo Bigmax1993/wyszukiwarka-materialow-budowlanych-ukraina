@@ -3030,6 +3030,11 @@ def sort_verification_urls(urls: list[str]) -> list[str]:
         low = u.lower()
         if any(x in low for x in RETAIL_URL_PRIORITY_KEYWORDS):
             return (0, low)
+        if any(
+            x in low
+            for x in ("karriere", "stellen", "jobs", "career", "stellenangebot")
+        ):
+            return (0, low)
         if any(x in low for x in ("ueber-uns", "über-uns", "unternehmen", "about")):
             return (1, low)
         if _is_impressum_url(low):

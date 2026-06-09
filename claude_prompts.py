@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 Killer-Prompts für Claude Sonnet — GU/Filialbau-Kampagne DE.
-Jeder Prompt: eine Aufgabe, strikt JSON, Null-Toleranz für Portale/PDF/Operatoren.
+Jeder Prompt: eine Aufgabe, strikt JSON — Portale/PDF/Operatoren ablehnen.
 """
 from __future__ import annotations
+
+import re
 
 from campaign_keyword_profile import (
     SERPER_TEMPLATE_PATTERNS,
@@ -16,6 +18,52 @@ from campaign_keyword_profile import (
 )
 
 _REQUIRED_CHAINS = "aldi, rewe, edeka, lidl, netto, penny, kaufland"
+PAGE_VERIFY_MAX_CHARS = 12000
+_PAGE_VERIFY_TEXT_PRIORITY = (
+    "referenz",
+    "projekt",
+    "auftraggeber",
+    "netto",
+    "rewe",
+    "aldi",
+    "lidl",
+    "kaufland",
+    "penny",
+    "edeka",
+    "einzelhandel",
+    "retail",
+    "filial",
+    "supermarkt",
+    "discounter",
+    "generalunternehmer",
+    "gewerbebau",
+    "karriere",
+    "stellen",
+)
+
+
+def prioritize_page_text_for_verify(
+    page_text: str, *, max_chars: int = PAGE_VERIFY_MAX_CHARS
+) -> str:
+    """Wichtige Zeilen (Referenzen, Ketten, Karriere) zuerst — innerhalb max_chars."""
+    raw = (page_text or "").strip()
+    if len(raw) <= max_chars:
+        return raw
+    lines = [ln.strip() for ln in re.split(r"[\n\r]+", raw) if ln.strip()]
+    if not lines:
+        return raw[:max_chars]
+    priority: list[str] = []
+    other: list[str] = []
+    for ln in lines:
+        low = ln.lower()
+        if any(k in low for k in _PAGE_VERIFY_TEXT_PRIORITY):
+            priority.append(ln)
+        else:
+            other.append(ln)
+    merged = " ".join(priority + other)
+    if len(merged) <= max_chars:
+        return merged
+    return merged[: max_chars - 3] + "..."
 
 
 def build_page_verify_prompt(
@@ -23,9 +71,9 @@ def build_page_verify_prompt(
     website: str,
     page_text: str,
     *,
-    max_chars: int = 8000,
+    max_chars: int = PAGE_VERIFY_MAX_CHARS,
 ) -> str:
-    snippet = (page_text or "")[:max_chars]
+    snippet = prioritize_page_text_for_verify(page_text or "", max_chars=max_chars)
     gu_kw = ", ".join(gu_required_keywords_sample())
     retail_kw = ", ".join(retail_context_keywords_sample())
     chain_kw = ", ".join(retail_chain_keywords_sample())
@@ -58,36 +106,40 @@ ENTSCHEIDUNGSBAUM (in dieser Reihenfolge)
 3) Kein Hinweis auf BAU/Auftragnehmer (nur Handel, Medien, Verwaltung) → is_gu=false
 4) Baufirma ja, aber KEIN Markt-/Filial-Projektnachweis → has_retail_context=false
 5) Projekte ja, aber nur Büro/Wohn/Gewerbe ohne Supermarkt/Discounter/Filiale → has_retail_context=false
-6) Passt inhaltlich: is_gu=true, has_retail_context=true, matched_chains ({_REQUIRED_CHAINS})
-7) Größe prüfen → is_small_firm (siehe unten)
+6) Passt inhaltlich: is_gu=true, has_retail_context=true
+7) matched_chains wenn benannte Kette als Projekt/Auftraggeber — sonst leer (siehe unten)
+8) Größe prüfen → is_small_firm (siehe unten)
+
+HANDELSKETTE / RETAIL-NACHWEIS (flexibel)
+• Ideal: benannte Kette als Projekt/Auftraggeber ({_REQUIRED_CHAINS})
+• Auch OK ohne Kette im Portfolio: GU/Bauunternehmen + Einzelhandel/Retail/Gewerbebau
+  (z. B. „Einzelhandelsbau", „Retail-Projekte", Karriere: „Auftraggeber Netto")
+• has_retail_context=true wenn Kette ODER klarer Retail-/Markt-Baubezug
+• matched_chains: nur wenn Kette WÖRTLICH vorkommt — sonst []
 
 FELD is_small_firm — DU ENTSCHEIDEST (Pflichtfeld)
-Ziel: kleine / regionale Baufirma für B2B-Outreach — KEIN Konzern.
+Ziel: kleine / regionale Baufirma — KEIN Weltkonzern.
 is_small_firm=true bei z. B.:
-• Familienunternehmen, inhabergeführt, Meisterbetrieb, regional tätig, Mittelstand
-• Wenige Standorte, eine Region, „vor Ort", typisch < 250 Mitarbeiter (wenn genannt)
-• Keine Konzern-/Weltkonzern-Signale auf der Seite
+• Familienunternehmen, inhabergeführt, Meisterbetrieb, regional, Mittelstand, GmbH mit einem Standort
+• Typisch < 250 Mitarbeiter — auch wenn „Groep"/„Gruppe"/Muttergesellschaft erwähnt wird
+• Junges regionales GU-Team (z. B. gegründet 2019, Bad Bentheim) mit Retail-Projekten
 is_small_firm=false bei z. B.:
-• Bekannte Großbaukonzerne: STRABAG, Hochtief, Goldbeck, Implenia, PORR, Zech, Bilfinger
-• Konzern, Holding, börsennotiert, weltweit tätig, global player
-• Explizit > 500 Mitarbeiter, mehrere Länder, Tochter der … Gruppe
-• Dominieren internationale Großprojekte (Flughafen, Autobahn, Kraftwerk) ohne regionalen Filialbau-Charakter
-Unsicher → is_small_firm=false (lieber ablehnen).
+• STRABAG, Hochtief, Goldbeck, Implenia, PORR, börsennotiert, > 500 MA, global player
+• Dominieren nur Megaprojekte (Flughafen, Autobahn) ohne Retail/Einzelhandel
+Unsicher bei regionaler GmbH mit GU + Einzelhandel/Retail → is_small_firm=true.
 
 KLEIN-INDIZIEN: {small_kw}
 GROSS-INDIZIEN: {large_kw}
 
 FELD is_gu — Bedeutung
-true = Bauauftragnehmer / Baufirma / Filialbauer (NICHT Einzelhandels-Betreiber).
-Das Wort „Generalunternehmer" ist hilfreich, aber NICHT erforderlich.
-Auch true bei: „Filialbau GmbH", „Bauunternehmen", „wir realisieren Filialen" + Projektbelege.
+true = Bauauftragnehmer / GU / Baufirma (NICHT Einzelhandels-Betreiber).
+Auch true bei: Generalunternehmer, GU, Bauunternehmen mit Gewerbe- UND Einzelhandelsbau.
 
 FELD has_retail_context — Bedeutung
-true = konkrete Nachweise für Markt-/Filial-Bauprojekte (siehe oben).
-false nur wenn: reiner Ladenbau ohne Markt, nur Bürobau, oder gar keine Projekte.
+true = Markt-/Filial-/Einzelhandels-Bezug: Referenzen, Fotos, Auftraggeber, Karriere-Stellen.
+false nur wenn: nur Wohn-/Bürobau ohne jeden Einzelhandels-/Retail-Bezug.
 
-HANDELSKETTEN (nur als Bau-Referenz/Projekt, nicht als Shop-Betreiber)
-{_REQUIRED_CHAINS}
+IM ZWEIFEL: FOR TRUE wenn Bau/GU + Einzelhandel/Retail — FOR FALSE nur bei klarem Betreiber/Portal.
 
 HILFS-SCHLÜSSELWÖRTER (nicht alle müssen vorkommen)
 [GU — optional]
@@ -107,6 +159,9 @@ BEISPIELE
 ✓ JA: „Referenzprojekte: Kaufland Umbau Halle, Penny Neubau"
 ✓ JA: alt-Text „Innenansicht Rewe Markt nach Umbau" auf Startseite
 ✓ JA klein: „Familienunternehmen Filialbau" + 45 Mitarbeiter + Rewe-Referenz → is_small_firm=true
+✓ JA (Wijco-Typ): „Generalunternehmer Gewerbe- und Einzelhandelsbau", Karriere: 
+  „Auftraggeber Netto Marken-Discount", Teil der Groep aber regionale GmbH → 
+  is_gu=true, has_retail_context=true, matched_chains=[netto], is_small_firm=true
 ✗ NEIN groß: STRABAG SE, weltweit 77.000 Mitarbeiter → is_small_firm=false
 ✗ NEIN: „REWE Markt — Öffnungszeiten, Prospekt" (Betreiber)
 ✗ NEIN: „Ladenbau Büros, Praxen, Hotels" ohne ein einziges Marktprojekt

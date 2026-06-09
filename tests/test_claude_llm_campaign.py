@@ -138,6 +138,51 @@ class PageVerifyTest(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIn("aldi", chains)
 
+    def test_apply_verdict_accepts_gu_einzelhandel_without_named_chain(self):
+        llm = {
+            "is_gu": True,
+            "has_retail_context": True,
+            "is_small_firm": True,
+            "primary_role": "Generalunternehmer",
+            "matched_gu_keywords": ["generalunternehmer"],
+            "matched_retail_keywords": ["einzelhandel", "gewerbebau"],
+            "matched_chains": [],
+            "matched_negative_keywords": [],
+            "reason": "GU Einzelhandelsbau",
+        }
+        page = (
+            "Wijco Bau GmbH — Generalunternehmer für Gewerbe- und Einzelhandelsbau "
+            "in Deutschland. Wir realisieren Retail-Projekte regional."
+        )
+        ok, reason, chains = apply_page_verdict(
+            llm,
+            page_text=page,
+            require_generalunternehmer=True,
+        )
+        self.assertTrue(ok)
+        self.assertIn("claude", reason)
+
+    def test_apply_verdict_accepts_wijco_style_karriere_netto(self):
+        llm = {
+            "is_gu": True,
+            "has_retail_context": True,
+            "is_small_firm": True,
+            "primary_role": "Generalunternehmer",
+            "matched_gu_keywords": ["generalunternehmer"],
+            "matched_retail_keywords": ["retail", "einzelhandel"],
+            "matched_chains": ["netto"],
+            "matched_negative_keywords": [],
+            "reason": "Auftraggeber Netto",
+        }
+        page = (
+            "Generalunternehmer Gewerbe- und Einzelhandelsbau. "
+            "Karriere: namhafte Auftraggeber wie Netto Marken-Discount. "
+            "Retail- und Gewerbeprojekte in Deutschland. Teil der Wijco Groep."
+        )
+        ok, reason, chains = apply_page_verdict(llm, page_text=page)
+        self.assertTrue(ok)
+        self.assertIn("netto", chains)
+
     def test_apply_verdict_rejects_large_firm_when_claude_says_not_small(self):
         llm = {
             "is_gu": True,

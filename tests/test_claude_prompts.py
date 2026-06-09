@@ -7,6 +7,7 @@ from claude_prompts import (
     build_discovery_terms_prompt,
     build_page_verify_prompt,
     build_row_cleanup_prompt,
+    prioritize_page_text_for_verify,
 )
 
 
@@ -21,6 +22,14 @@ class TestClaudePrompts(unittest.TestCase):
         self.assertIn("is_gu", p)
         self.assertIn("Test GmbH", p)
         self.assertIn("rewe", p.lower())
+        self.assertIn("Wijco", p)
+        self.assertIn("Auftraggeber Netto", p)
+
+    def test_prioritize_page_text_puts_retail_lines_first(self):
+        long_tail = "x " * 5000
+        text = f"{long_tail}\nAuftraggeber Netto Marken-Discount Retail-Projekte"
+        out = prioritize_page_text_for_verify(text, max_chars=200)
+        self.assertTrue(out.startswith("Auftraggeber Netto"))
 
     def test_row_cleanup_prompt_excel_schema(self):
         p = build_row_cleanup_prompt(
