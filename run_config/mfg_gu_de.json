@@ -28,7 +28,7 @@
   "serper_daily_limit": 3000,
   "serper_unlimited": false,
   "enable_auto_email": false,
-  "enable_claude_discovery_terms": false,
+  "enable_claude_discovery_terms": true,
   "enable_claude_page_verify": true,
   "enable_claude_contact_extract": true,
   "enable_claude_row_cleanup": true,
