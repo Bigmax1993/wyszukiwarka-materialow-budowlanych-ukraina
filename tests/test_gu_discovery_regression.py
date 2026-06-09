@@ -945,5 +945,30 @@ class RotationThresholdRegression(unittest.TestCase):
         self.assertFalse(should_rotate)
 
 
+class EnrichRowSerperSkipRegression(unittest.TestCase):
+    @patch.object(scraper, "REQUIRE_WEBSITE_RETAIL_VERIFICATION", False)
+    @patch.object(scraper, "search_official_website_with_serper")
+    @patch.object(scraper, "collect_contacts_from_website")
+    def test_reverify_skips_serper_when_url_in_row(self, mock_collect, mock_serper):
+        mock_collect.return_value = {
+            "emails": ["info@firma.de"],
+            "impressum_emails": ["info@firma.de"],
+            "phones": [],
+            "website": "https://firma.de",
+            "source_urls": ["https://firma.de"],
+            "page_snippet": "",
+        }
+        row = {
+            "url": "https://firma.de",
+            "www": "https://firma.de",
+            "nazwa": "Firma Bau GmbH",
+        }
+        cache = {"contacts": {}}
+        scraper.enrich_row_with_contacts(
+            row, cache, _LOGGER, force_refresh=True
+        )
+        mock_serper.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

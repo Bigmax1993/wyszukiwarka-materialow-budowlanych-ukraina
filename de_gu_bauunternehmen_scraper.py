@@ -5521,20 +5521,22 @@ def enrich_row_with_contacts(
     if place_url in contacts_cache and refresh:
         console_step(f"Kontakt neu laden (ignoruj cache): {row.get('nazwa', '')}")
 
-    maps_website = normalize_website(row.get("www", ""))
-    website = maps_website
+    cached_info = contacts_cache.get(place_url) or {}
+    website = normalize_website(row.get("www", "") or row.get("official_website", ""))
+    if not website:
+        website = normalize_website(cached_info.get("official_website") or "")
+    if not website and (place_url or "").strip().lower().startswith(("http://", "https://")):
+        website = normalize_website(place_url)
     serper_source_score = 0
-    if FORCE_SERPER_LOOKUP:
-        serper_query = build_company_query_from_row(row)
-        serper_website = search_official_website_with_serper(
-            serper_query, row.get("full_address") or row.get("adres", ""), logger, cache
-        )
-        website = serper_website or maps_website
-    elif not website:
+    # Serper tylko gdy brak www w JSON/wierszu; przy reverify (force_refresh) nie odświeżamy URL z API
+    need_serper = not website
+    if website and FORCE_SERPER_LOOKUP and not refresh:
+        need_serper = True
+    if need_serper:
         serper_query = build_company_query_from_row(row)
         website = search_official_website_with_serper(
             serper_query, row.get("full_address") or row.get("adres", ""), logger, cache
-        )
+        ) or website
 
     serper_query = build_company_query_from_row(row)
     serper_cached = cache.setdefault("serper", {}).get(serper_query, {})
