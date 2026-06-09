@@ -21,18 +21,38 @@ CLAUDE_API_RETRY_ATTEMPTS = 3
 CLAUDE_API_RETRY_WAIT_SECONDS = 20
 CLAUDE_DAILY_LIMIT = 3000
 CLAUDE_DISCOVERY_RESERVE = 1000
+# Domyślnie bez dziennego limitu wywołań (jak SERPER_UNLIMITED).
+CLAUDE_UNLIMITED = True
+
+
+def _truthy_env(raw: str) -> bool:
+    return str(raw or "").strip().lower() in ("1", "true", "yes", "tak", "on")
 
 
 def configure_claude_limits(
     *,
     daily_limit: int | None = None,
     reserve: int | None = None,
+    unlimited: bool | None = None,
 ) -> None:
-    global CLAUDE_DAILY_LIMIT, CLAUDE_DISCOVERY_RESERVE
+    global CLAUDE_DAILY_LIMIT, CLAUDE_DISCOVERY_RESERVE, CLAUDE_UNLIMITED
     if daily_limit is not None:
         CLAUDE_DAILY_LIMIT = int(daily_limit)
     if reserve is not None:
         CLAUDE_DISCOVERY_RESERVE = int(reserve)
+    if unlimited is not None:
+        CLAUDE_UNLIMITED = bool(unlimited)
+
+
+def is_claude_unlimited() -> bool:
+    """Brak dziennego limitu / rezerwy na wywołania Claude."""
+    return bool(CLAUDE_UNLIMITED)
+
+
+if _truthy_env(get_env_value("CLAUDE_UNLIMITED", "")) or _truthy_env(
+    get_env_value("DISABLE_CLAUDE_DAILY_LIMIT", "")
+):
+    CLAUDE_UNLIMITED = True
 
 
 def get_claude_model() -> str:
@@ -57,6 +77,8 @@ def get_remaining_daily_claude_limit(cache: dict | None) -> tuple[str, int, int]
     today = _campaign_today()
     daily = (cache or {}).setdefault("claude_daily", {})
     used_today = int(daily.get(today, 0))
+    if is_claude_unlimited():
+        return today, used_today, CLAUDE_DAILY_LIMIT
     remaining = max(0, CLAUDE_DAILY_LIMIT - used_today)
     return today, used_today, remaining
 
@@ -68,6 +90,8 @@ def increase_daily_claude_counter(cache: dict | None, increment: int = 1) -> Non
 
 
 def is_claude_limit_reached_today(cache: dict | None) -> bool:
+    if is_claude_unlimited():
+        return False
     _, _, remaining = get_remaining_daily_claude_limit(cache)
     return remaining <= CLAUDE_DISCOVERY_RESERVE
 
@@ -117,13 +141,14 @@ def claude_generate_text(
     bypass_daily_limit: bool = False,
     on_step: Callable[[str], None] | None = None,
 ) -> tuple[str, str]:
-    """Zwraca (text, model). bypass_daily_limit=True — bez dziennego limitu (row cleanup)."""
+    """Zwraca (text, model). bypass_daily_limit=True wymusza brak limitu gdy unlimited=False."""
     key = (api_key or get_anthropic_api_key()).strip()
     if not key:
         raise RuntimeError("Brak ANTHROPIC_API_KEY")
     if is_claude_rate_limited(cache):
         raise RuntimeError("Claude API w cooldown (rate limit)")
-    if not bypass_daily_limit and is_claude_limit_reached_today(cache):
+    skip_daily_limit = bypass_daily_limit or is_claude_unlimited()
+    if not skip_daily_limit and is_claude_limit_reached_today(cache):
         _, used, remaining = get_remaining_daily_claude_limit(cache)
         raise RuntimeError(
             f"Claude Tageslimit-Reserve erreicht ({_campaign_today()}: "
@@ -178,7 +203,7 @@ def claude_generate_text(
     if data is None:
         raise last_exc or RuntimeError("Claude API: brak odpowiedzi po ponowieniach")
 
-    if not bypass_daily_limit:
+    if not skip_daily_limit:
         increase_daily_claude_counter(cache, 1)
     blocks = data.get("content") or []
     text = ""

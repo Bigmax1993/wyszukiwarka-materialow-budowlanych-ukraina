@@ -19,6 +19,23 @@ from campaign_keyword_profile import (
 
 _REQUIRED_CHAINS = "aldi, rewe, edeka, lidl, netto, penny, kaufland"
 PAGE_VERIFY_MAX_CHARS = 12000
+CONTACT_EXTRACT_MAX_CHARS = 16000
+_CONTACT_EXTRACT_TEXT_PRIORITY = (
+    "impressum",
+    "kontakt",
+    "contact",
+    "anschrift",
+    "geschäftsführ",
+    "datenschutz",
+    "mailto",
+    "@",
+    "tel",
+    "telefon",
+    "phone",
+    "fax",
+    "e-mail",
+    "email",
+)
 _PAGE_VERIFY_TEXT_PRIORITY = (
     "referenz",
     "projekt",
@@ -43,9 +60,13 @@ _PAGE_VERIFY_TEXT_PRIORITY = (
 
 
 def prioritize_page_text_for_verify(
-    page_text: str, *, max_chars: int = PAGE_VERIFY_MAX_CHARS
+    page_text: str,
+    *,
+    max_chars: int = PAGE_VERIFY_MAX_CHARS,
+    priority_keywords: tuple[str, ...] | None = None,
 ) -> str:
-    """Wichtige Zeilen (Referenzen, Ketten, Karriere) zuerst — innerhalb max_chars."""
+    """Wichtige Zeilen zuerst — innerhalb max_chars (Keywords konfigurierbar)."""
+    keys = priority_keywords or _PAGE_VERIFY_TEXT_PRIORITY
     raw = (page_text or "").strip()
     if len(raw) <= max_chars:
         return raw
@@ -56,7 +77,7 @@ def prioritize_page_text_for_verify(
         other_sec: list[str] = []
         for sec in sections:
             low = sec.lower()
-            if any(k in low for k in _PAGE_VERIFY_TEXT_PRIORITY):
+            if any(k in low for k in keys):
                 priority_sec.append(sec)
             else:
                 other_sec.append(sec)
@@ -69,7 +90,7 @@ def prioritize_page_text_for_verify(
         other: list[str] = []
         for ln in lines:
             low = ln.lower()
-            if any(k in low for k in _PAGE_VERIFY_TEXT_PRIORITY):
+            if any(k in low for k in keys):
                 priority.append(ln)
             else:
                 other.append(ln)
@@ -274,6 +295,47 @@ website={website}
 url={url}
 handelsketten={handelsketten}
 email_nur_info={email}
+"""
+
+
+def build_contact_extract_prompt(
+    company_name: str,
+    website: str,
+    page_text: str,
+) -> str:
+    snippet = prioritize_page_text_for_verify(
+        page_text,
+        max_chars=CONTACT_EXTRACT_MAX_CHARS,
+        priority_keywords=_CONTACT_EXTRACT_TEXT_PRIORITY,
+    )
+    return f"""ROLLE
+Du bist Kontakt-Rechercheur für B2B-Outreach an kleine Generalunternehmer in Deutschland.
+Deine einzige Aufgabe: E-Mail-Adressen und Telefonnummern aus dem Website-Auszug finden.
+
+ZIEL
+Firma: {company_name}
+Webseite: {website}
+
+REGELN (streng)
+• Nur Daten extrahieren, die WÖRTLICH im Auszug stehen — nichts erfinden, nichts raten.
+• Impressum- und Kontaktseiten haben höchste Priorität.
+• mailto:-Links und sichtbare @-Adressen zählen.
+• Telefon: deutsche Nummern (+49 oder 0…), keine Fax-Zeilen wenn eine normale Tel.-Zeile existiert.
+• Keine Portale (11880, GelbeSeiten), keine noreply/no-reply, keine PDF-Viewer-Adressen.
+• Wenn nichts gefunden: leere Listen.
+
+OUTPUT (nur JSON, kein Markdown)
+{{"company_name":"","emails":[],"phones":[],"impressum_emails":[],"reason":""}}
+
+Felder:
+• company_name — offizieller Firmenname nur wenn klar im Impressum/Kontakt genannt, sonst ""
+• emails — alle gültigen Firmen-E-Mails aus dem Text
+• impressum_emails — Teilmenge von emails, die aus Impressum/Datenschutz/Legal kommen
+• phones — max. 3 eindeutige Telefonnummern
+• reason — max. 1 Satz (z. B. „Impressum info@…" oder „keine Kontakte im Auszug")
+
+WEBSITE-AUSZUG (vollständiger Domain-Crawl)
+{snippet or "(leer)"}
 """
 
 

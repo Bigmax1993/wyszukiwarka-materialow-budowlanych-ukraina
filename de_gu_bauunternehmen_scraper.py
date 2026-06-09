@@ -30,13 +30,15 @@ _paths = campaign_output_paths(_campaign, "de_gu_bauunternehmen")
 _DATA_ROOT = _paths["data_root"]
 
 from scraper_web_config import (
+    CLAUDE_UNLIMITED,
+    ENABLE_CLAUDE_CONTACT_EXTRACT,
     ENABLE_CLAUDE_DISCOVERY_TERMS,
     ENABLE_CLAUDE_PAGE_VERIFY,
     ENABLE_CLAUDE_ROW_CLEANUP,
     ENABLE_PLAYWRIGHT_COOKIE_CONSENT,
 )
 
-# Kontakte www: e-maile tylko regex + mailto (bez LLM ekstrakcji).
+# Kontakte www: regex + mailto; przy braku email_target — Claude na tekście crawla.
 from playwright_cookie_consent import apply_playwright_cookie_fallback
 from de_gu_keywords import (
     DE_OST_PLACE_MARKERS,
@@ -91,11 +93,13 @@ def apply_gu_run_config_extras(module, data: dict) -> None:
     _bool_keys = (
         "enable_claude_discovery_terms",
         "enable_claude_page_verify",
+        "enable_claude_contact_extract",
         "enable_claude_row_cleanup",
         "require_generalunternehmer",
         "require_market_projects_in_portfolio",
         "require_website_references_or_portfolio",
         "serper_unlimited",
+        "claude_unlimited",
     )
     normalized_data = dict(data)
     for key in _bool_keys:
@@ -126,12 +130,14 @@ def apply_gu_run_config_extras(module, data: dict) -> None:
     if (
         "claude_daily_limit" in normalized_data
         or "claude_discovery_reserve" in normalized_data
+        or "claude_unlimited" in normalized_data
     ):
         from claude_client import configure_claude_limits
 
         configure_claude_limits(
             daily_limit=normalized_data.get("claude_daily_limit"),
             reserve=normalized_data.get("claude_discovery_reserve"),
+            unlimited=normalized_data.get("claude_unlimited"),
         )
 
 
@@ -459,6 +465,16 @@ CLAUDE_DISCOVERY_TERMS_PER_ROUND = 8
 SERPER_DISCOVERY_RESERVE = 1000
 CLAUDE_DAILY_LIMIT = 3000
 CLAUDE_DISCOVERY_RESERVE = 1000
+def _env_truthy(raw: str) -> bool:
+    return str(raw or "").strip().lower() in ("1", "true", "yes", "tak", "on")
+
+
+_claude_unlimited_env = (os.environ.get("CLAUDE_UNLIMITED") or "").strip()
+if _claude_unlimited_env:
+    CLAUDE_UNLIMITED = _env_truthy(_claude_unlimited_env)
+_disable_claude_limit_env = (os.environ.get("DISABLE_CLAUDE_DAILY_LIMIT") or "").strip()
+if _disable_claude_limit_env and _env_truthy(_disable_claude_limit_env):
+    CLAUDE_UNLIMITED = True
 _claude_limit_env = (os.environ.get("CLAUDE_DAILY_LIMIT") or "").strip()
 if _claude_limit_env:
     try:
@@ -478,6 +494,7 @@ def _sync_claude_limits_from_module() -> None:
     configure_claude_limits(
         daily_limit=CLAUDE_DAILY_LIMIT,
         reserve=CLAUDE_DISCOVERY_RESERVE,
+        unlimited=CLAUDE_UNLIMITED,
     )
 
 
@@ -3142,6 +3159,19 @@ def _crawl_website_for_company(
     return result, format_crawl_text_for_claude(result)
 
 
+def _get_website_crawl_text(website: str, cache: dict | None) -> str:
+    """Tekst pełnego crawla domeny (dla Claude contact extract)."""
+    from website_full_crawl import WebsiteCrawlResult, format_crawl_text_for_claude
+
+    site = normalize_website(website)
+    if not site:
+        return ""
+    crawl = ((cache or {}).get("website_crawl") or {}).get(site)
+    if isinstance(crawl, WebsiteCrawlResult):
+        return format_crawl_text_for_claude(crawl)
+    return ""
+
+
 def merge_contacts_from_crawl(crawl, website: str) -> dict:
     """Złącz e-maile/telefony ze wszystkich podstron po pełnym crawlu."""
     emails: list[str] = []
@@ -3363,14 +3393,10 @@ def verify_company_on_website(
     blob = " ".join([page_text, serper_blob])
 
     if ENABLE_CLAUDE_PAGE_VERIFY:
-        from claude_client import is_claude_limit_reached_today, is_claude_rate_limited
+        from claude_client import is_claude_rate_limited
         from claude_page_verify import claude_verify_company_page
 
-        if (
-            get_anthropic_api_key()
-            and not is_claude_rate_limited(cache)
-            and not is_claude_limit_reached_today(cache)
-        ):
+        if get_anthropic_api_key() and not is_claude_rate_limited(cache):
             claude = claude_verify_company_page(
                 company_name,
                 website,
@@ -5509,6 +5535,47 @@ def enrich_row_with_contacts(
         cache,
         cache_key=place_url,
     )
+    if (
+        not target_email
+        and ENABLE_CLAUDE_CONTACT_EXTRACT
+        and website
+    ):
+        crawl_text = _get_website_crawl_text(website, cache) or collected.get(
+            "page_snippet"
+        ) or ""
+        if crawl_text.strip():
+            from claude_contact_extract import (
+                claude_extract_contacts_from_pages,
+                merge_claude_contacts_into_collected,
+            )
+
+            console_step(
+                f"Claude Kontaktsuche (kein E-Mail per Regex): {website}"
+            )
+            parsed = claude_extract_contacts_from_pages(
+                company_for_email,
+                website,
+                crawl_text,
+                logger,
+                cache,
+                cache_key=place_url,
+                on_step=console_step,
+            )
+            if parsed and (parsed.get("emails") or parsed.get("phones")):
+                collected = merge_claude_contacts_into_collected(collected, parsed)
+                row = reconcile_contact_sources(row, collected)
+                target_email, email_score, email_pick_method = (
+                    resolve_inquiry_email_target(
+                        collected,
+                        website or "",
+                        company_for_email,
+                        logger,
+                        cache,
+                        cache_key=place_url,
+                    )
+                )
+                if target_email:
+                    email_pick_method = "claude_extract"
     if target_email and is_non_commercial_email(target_email):
         target_email = ""
         email_pick_method = "blocked_institution"
@@ -6216,6 +6283,8 @@ def _run_smoke_tests() -> None:
     assert parsed_contacts["phones"]
     assert "GmbH" in parsed_contacts["company_name"]
     assert ENABLE_CLAUDE_PAGE_VERIFY is True
+    assert ENABLE_CLAUDE_CONTACT_EXTRACT is True
+    assert CLAUDE_UNLIMITED is True
     assert ENABLE_CLAUDE_ROW_CLEANUP is True
     assert CONTACT_DATA_TOKEN_MAX == 40
     assert CONTACT_EMAIL_TOKEN_MAX == 40

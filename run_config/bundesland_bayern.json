@@ -8,6 +8,7 @@
   "enable_auto_email": false,
   "enable_claude_discovery_terms": true,
   "enable_claude_page_verify": true,
+  "claude_unlimited": true,
   "claude_discovery_max_rounds": 3,
   "claude_discovery_terms_per_round": 8,
   "serper_discovery_reserve": 1000,

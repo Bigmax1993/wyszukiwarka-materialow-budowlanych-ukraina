@@ -2,6 +2,7 @@
 import unittest
 
 from claude_prompts import (
+    build_contact_extract_prompt,
     build_custom_email_prompt_de,
     build_custom_email_prompt_pl,
     build_discovery_terms_prompt,
@@ -44,6 +45,14 @@ class TestClaudePrompts(unittest.TestCase):
         self.assertIn("handelsketten", p)
         self.assertIn("KILLER-REGELN", p)
         self.assertIn("Sachsen, Bayern", p)
+
+    def test_contact_extract_prompt_schema(self):
+        p = build_contact_extract_prompt(
+            "Bau GmbH", "https://bau.de", "Impressum info@bau.de"
+        )
+        self.assertIn("impressum_emails", p)
+        self.assertIn("WÖRTLICH", p)
+        self.assertIn("info@bau.de", p)
 
     def test_discovery_terms_prompt_count(self):
         p = build_discovery_terms_prompt(

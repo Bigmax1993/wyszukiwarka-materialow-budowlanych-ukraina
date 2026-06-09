@@ -59,6 +59,13 @@ def parse_contact_extract_response(text: str) -> dict:
             emails.append(norm)
     emails = filter_commercial_emails(emails)
 
+    impressum_emails: list[str] = []
+    for item in data.get("impressum_emails") or []:
+        norm = normalize_email_contact(str(item))
+        if norm and norm not in impressum_emails:
+            impressum_emails.append(norm)
+    impressum_emails = filter_commercial_emails(impressum_emails)
+
     phones: list[str] = []
     for item in data.get("phones") or []:
         norm = normalize_phone_contact(str(item))
@@ -72,6 +79,7 @@ def parse_contact_extract_response(text: str) -> dict:
         "company_name": company_name,
         "company_names": company_names,
         "emails": emails,
+        "impressum_emails": impressum_emails,
         "phones": phones,
         "reason": reason,
     }

@@ -89,48 +89,34 @@ class ClaudePageVerifyIntegrationTest(unittest.TestCase):
         self.assertFalse(result["is_small_firm"])
         self.assertIn("kleinunternehmen", result["verification_reason"])
 
-    def test_claude_reserve_blocks_api_at_buffer(self):
-        from claude_client import (
-            CLAUDE_DAILY_LIMIT,
-            CLAUDE_DISCOVERY_RESERVE,
-            claude_generate_text,
-            configure_claude_limits,
-            is_claude_limit_reached_today,
-        )
+    def test_claude_reserve_blocks_api_at_buffer_when_limited(self):
+        import claude_client as cc
 
-        configure_claude_limits(daily_limit=3000, reserve=1000)
-        cache = {"claude_daily": {"2099-01-01": CLAUDE_DAILY_LIMIT - CLAUDE_DISCOVERY_RESERVE}}
+        cc.configure_claude_limits(daily_limit=3000, reserve=1000, unlimited=False)
+        used = cc.CLAUDE_DAILY_LIMIT - cc.CLAUDE_DISCOVERY_RESERVE
+        cache = {"claude_daily": {"2099-01-01": used}}
         with patch("claude_client._campaign_today", return_value="2099-01-01"):
-            self.assertTrue(is_claude_limit_reached_today(cache))
+            self.assertTrue(cc.is_claude_limit_reached_today(cache))
             with patch("claude_client.get_anthropic_api_key", return_value="test-key"):
                 with self.assertRaises(RuntimeError):
-                    claude_generate_text("ping", MagicMock(), cache=cache)
+                    cc.claude_generate_text("ping", MagicMock(), cache=cache)
 
-    def test_cleanup_bypasses_daily_limit(self):
-        from claude_client import (
-            CLAUDE_DAILY_LIMIT,
-            CLAUDE_DISCOVERY_RESERVE,
-            claude_generate_text,
-            configure_claude_limits,
-        )
+    def test_claude_unlimited_skips_daily_cap(self):
+        import claude_client as cc
 
-        configure_claude_limits(daily_limit=3000, reserve=1000)
-        cache = {"claude_daily": {"2099-01-01": CLAUDE_DAILY_LIMIT}}
+        cc.configure_claude_limits(daily_limit=3000, reserve=1000, unlimited=True)
+        cache = {"claude_daily": {"2099-01-01": cc.CLAUDE_DAILY_LIMIT}}
         with patch("claude_client._campaign_today", return_value="2099-01-01"):
+            self.assertFalse(cc.is_claude_limit_reached_today(cache))
             with patch("claude_client.get_anthropic_api_key", return_value="test-key"):
                 with patch("claude_client.requests.post") as mock_post:
                     mock_post.return_value.status_code = 200
                     mock_post.return_value.json.return_value = {
                         "content": [{"type": "text", "text": '{"company_name_clean":"OK GmbH"}'}]
                     }
-                    text, _ = claude_generate_text(
-                        "cleanup",
-                        MagicMock(),
-                        cache=cache,
-                        bypass_daily_limit=True,
-                    )
+                    text, _ = cc.claude_generate_text("cleanup", MagicMock(), cache=cache)
         self.assertIn("OK GmbH", text)
-        self.assertEqual(cache["claude_daily"]["2099-01-01"], CLAUDE_DAILY_LIMIT)
+        self.assertEqual(cache["claude_daily"]["2099-01-01"], cc.CLAUDE_DAILY_LIMIT)
 
     def test_wide_email_regex_40_chars(self):
         import de_gu_bauunternehmen_scraper as scraper

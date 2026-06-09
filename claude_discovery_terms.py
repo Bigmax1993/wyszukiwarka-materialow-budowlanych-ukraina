@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timedelta
 
 from claude_prompts import build_discovery_terms_prompt as _build_discovery_terms_prompt
-from claude_client import claude_generate_text, is_claude_limit_reached_today
+from claude_client import claude_generate_text
 from de_gu_keywords import BUNDESLAND_CONFIG
 from retail_store_builder_filter import STRICT_GU_MARKERS, is_generalunternehmer
 from scraper_env import get_anthropic_api_key
@@ -145,9 +145,6 @@ def generate_claude_discovery_terms(
     api_key = get_anthropic_api_key()
     if not api_key:
         logger.warning("Claude discovery: brak ANTHROPIC_API_KEY")
-        return []
-    if is_claude_limit_reached_today(cache):
-        logger.warning("Claude discovery: dzienny limit / rezerwa")
         return []
 
     prompt = build_discovery_terms_prompt(
