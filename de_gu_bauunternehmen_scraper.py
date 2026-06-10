@@ -5354,11 +5354,19 @@ def _process_email_jobs(
         jobs_to_send = email_jobs[:remaining]
         jobs_deferred = email_jobs[remaining:]
     contacts_cache = cache.get("contacts", {})
+    rows_by_url = {
+        (r.get("url") or "").strip(): r
+        for r in all_rows
+        if (r.get("url") or "").strip()
+    }
     for mail in jobs_to_send:
         target = mail["email_target"]
         domain = get_email_domain(target)
         place_url = mail.get("place_url", "")
-        contact_info = contacts_cache.get(place_url, {})
+        contact_info = dict(contacts_cache.get(place_url) or {})
+        row_match = rows_by_url.get(place_url)
+        if row_match:
+            contact_info = {**pipeline_row_to_contact_info(row_match), **contact_info}
         _em, val_url, val_name, val_text = contact_validation_fields(
             contact_info, place_url
         )

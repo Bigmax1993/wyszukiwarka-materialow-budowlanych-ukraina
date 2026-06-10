@@ -997,6 +997,8 @@ def is_valid_retail_store_builder_contact(
 def is_cache_contact_not_store_builder(place_url: str, info: dict | None) -> bool:
     if not isinstance(info, dict):
         return True
+    if info.get("retail_verified"):
+        return False
     if (
         (info.get("verification_reason") or "").strip() == "pending_www_verify"
         and not info.get("retail_verified")
