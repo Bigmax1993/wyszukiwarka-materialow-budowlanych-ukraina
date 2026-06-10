@@ -44,4 +44,5 @@ jobs:
             tests.test_website_full_crawl \
             tests.test_claude_client_retry \
             tests.test_claude_page_text \
+            tests.test_discovery_run_state \
             -v

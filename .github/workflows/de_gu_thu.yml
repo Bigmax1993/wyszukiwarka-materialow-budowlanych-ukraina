@@ -46,21 +46,25 @@ jobs:
           FORCED="${{ github.event_name == 'workflow_dispatch' && inputs.artifact_run_id || '' }}"
           if [ -n "$FORCED" ]; then
             RUN_ID="$FORCED"
+            ARTIFACT="de-gu-wyniki-wed"
           else
-            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
-              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-wed" and .expired==false) | .workflow_run.id' | head -1)
+            PICK=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+              --paginate --jq '[.artifacts[] | select(.expired==false) | select(.name=="de-gu-wyniki-wed" or .name=="de-gu-wyniki-pi")] | sort_by(.created_at) | reverse | .[0] // empty')
+            RUN_ID=$(echo "$PICK" | jq -r '.workflow_run.id // empty')
+            ARTIFACT=$(echo "$PICK" | jq -r '.name // empty')
           fi
-          if [ -z "$RUN_ID" ]; then
-            echo "::error::Brak artefaktu de-gu-wyniki-wed (uruchom najpierw GU sobota discovery)"
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "::error::Brak artefaktu discovery (de-gu-wyniki-wed lub de-gu-wyniki-pi)"
             exit 1
           fi
           echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "Pobieram de-gu-wyniki-wed z run $RUN_ID"
+          echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
+          echo "Pobieram $ARTIFACT z run $RUN_ID"
 
-      - name: Download cache from sobota
+      - name: Download cache from discovery (sobota lub piatek)
         uses: actions/download-artifact@v4
         with:
-          name: de-gu-wyniki-wed
+          name: ${{ steps.artifact_run.outputs.artifact || 'de-gu-wyniki-wed' }}
           github-token: ${{ github.token }}
           run-id: ${{ steps.artifact_run.outputs.run-id }}
           path: .

@@ -6222,6 +6222,23 @@ def run_scraper(
                 ignore_send_window=ignore_send_window,
             )
     finally:
+        if serper_only and discovery_mode != "emails_only" and not rebuild_from_cache:
+            from discovery_run_state import record_discovery_run_state
+
+            record_discovery_run_state(
+                cache,
+                all_rows=all_rows,
+                total_new_rows=total_new_rows,
+                serper_only=True,
+                rotate_mode=rotate_mode,
+                campaign_today=campaign_today(),
+                serper_daily_limit=SERPER_DAILY_LIMIT,
+                serper_discovery_reserve=SERPER_DISCOVERY_RESERVE,
+                is_serper_unlimited=is_serper_unlimited(),
+                is_serper_limit_reached_today_fn=is_serper_limit_reached_today,
+                is_serper_api_exhausted_fn=is_serper_api_exhausted,
+                discovery_target_reached_fn=_discovery_target_reached,
+            )
         persist_progress(all_rows, cache, logger, reason="Ende Lauf")
 
     if (

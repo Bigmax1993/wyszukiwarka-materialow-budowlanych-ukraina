@@ -18,7 +18,8 @@ Repozytorium: [Wyszukiwarka-partnerow](https://github.com/Bigmax1993/Wyszukiwark
 
 | **CI Deploy** | `ci-deploy.yml` | push | smoke + walidacja secretów + dry-run maili |
 
-| **GU sobota discovery** | `de_gu_wed.yml` | cron, ręcznie | Rotacja 1 Bundesland, kumulacja cache → `de-gu-wyniki-wed` |
+| **GU piatek discovery** | `de_gu_pi.yml` | cron, ręcznie | Discovery część 1 (max 6 h) → `de-gu-wyniki-pi` |
+| **GU sobota discovery** | `de_gu_wed.yml` | cron, ręcznie | Część 2 jeśli Serper w piątek nie wyczerpany → `de-gu-wyniki-wed` |
 
 | **GU niedziela backfill** | `de_gu_thu.yml` | cron, ręcznie | Backfill + Excel → `de-gu-wyniki-thu` |
 
@@ -40,7 +41,8 @@ Repozytorium: [Wyszukiwarka-partnerow](https://github.com/Bigmax1993/Wyszukiwark
 
 |-------|----------|----------|-----------|
 
-| **Sobota** | discovery | `10 18 * * 6` | **20:10** |
+| **Piątek** | discovery część 1 | `0 15 * * 5` | **17:00** |
+| **Sobota** | discovery część 2 | `10 18 * * 6` | **20:10** (pomijane gdy piątek wyczerpał Serper) |
 
 | **Niedziela** | backfill | `30 3 * * 0` | **05:30** |
 
@@ -98,13 +100,13 @@ Setup OAuth: `python scripts/gdrive_oauth_setup.py` — szczegóły w [`GOOGLE_D
 
 ```
 
-sobota → wed → niedziela → thu → sync Drive → pon prep → mon → pon send → tue → wt send → fri
+piatek → pi → sobota → wed (opcjonalnie) → niedziela → thu → sync Drive → pon prep → mon → pon send → tue → wt send → fri
 
 ```
 
 
 
-Sobota discovery pobiera poprzedni `de-gu-wyniki-fri` (kumulacja tygodniowa cache + Excel).
+Piątek discovery: `de-gu-wyniki-fri` → `de-gu-wyniki-pi`. Sobota: kontynuacja z `pi` (`--respect-cache`) tylko gdy w piątek nie wyczerpano limitu Serper; wynik → `de-gu-wyniki-wed`. Niedziela backfill: najnowszy `wed` lub `pi`.
 
 **Sync Drive** (pon 06:00 PL) pobiera **`de-gu-wyniki-thu`** z niedzielnego backfillu — kolejność: `thu` → `wed` → `mon` → `tue` → `fri`. Nie używa `fri`/`tue` z poprzedniej wysyłki, dopóki istnieje `thu`.
 

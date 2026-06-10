@@ -1,93 +1,252 @@
 ﻿name: GU sobota discovery
 
+
+
 on:
+
   schedule:
+
     # 18:10 UTC = 20:10 Europe/Warsaw (CEST); zimą (CET) ustaw 19:10 UTC
+
     - cron: "10 18 * * 6"
+
   workflow_dispatch:
+
     inputs:
+
       resume_artifact_run_id:
-        description: "Wznow discovery z artefaktu wed (run ID). Puste = kumuluj z fri."
+
+        description: "Wznow discovery z artefaktu wed/pi (run ID). Puste = logika piatek→sobota."
+
         required: false
+
         type: string
 
+      force_saturday_discovery:
+
+        description: "Wymus sobote mimo wyczerpanego Serper w piatek"
+
+        type: boolean
+
+        default: false
+
+
+
 permissions:
+
   actions: read
+
   contents: read
 
+
+
 env:
+
   SCRAPER_TIMEZONE: Europe/Warsaw
+
   DISABLE_SEND_WINDOW: "1"
+
   SERPER_DAILY_LIMIT: "3000"
+
   CLAUDE_UNLIMITED: "1"
+
   KANBUD_PROJECT_ROOT: ${{ github.workspace }}/libs
 
+
+
 jobs:
+
   discover:
+
     runs-on: ubuntu-latest
+
     timeout-minutes: 360
+
     env:
+
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
     steps:
+
       - uses: actions/checkout@v4
 
+
+
       - uses: actions/setup-python@v5
+
         with:
+
           python-version: "3.12"
 
+
+
       - run: |
+
           pip install -r requirements.txt
+
           python -m playwright install chromium --with-deps
 
-      - name: Resolve artifact run (wznowienie lub poprzedni poniedzialek)
+
+
+      - name: Resolve artifact run (piatek / wznowienie / fri)
+
         id: prev_run
+
         continue-on-error: true
+
         env:
+
           GH_TOKEN: ${{ github.token }}
+
         run: |
+
           RESUME="${{ github.event_name == 'workflow_dispatch' && inputs.resume_artifact_run_id || '' }}"
+
+          FORCE="${{ github.event_name == 'workflow_dispatch' && inputs.force_saturday_discovery == 'true' }}"
+
           if [ -n "$RESUME" ]; then
+
             echo "run-id=$RESUME" >> "$GITHUB_OUTPUT"
+
             echo "artifact-name=de-gu-wyniki-wed" >> "$GITHUB_OUTPUT"
+
             echo "resume=1" >> "$GITHUB_OUTPUT"
-            echo "Wznowienie discovery z de-gu-wyniki-wed (run $RESUME)"
-          else
-            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
-              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-fri" and .expired==false) | .workflow_run.id' | head -1)
-            if [ -n "$RUN_ID" ]; then
-              echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
-              echo "artifact-name=de-gu-wyniki-fri" >> "$GITHUB_OUTPUT"
-              echo "resume=0" >> "$GITHUB_OUTPUT"
-              echo "Kumuluje cache z de-gu-wyniki-fri (run $RUN_ID)"
-            else
-              echo "Brak poprzedniego artefaktu — pierwszy cykl"
-            fi
+
+            echo "continue=1" >> "$GITHUB_OUTPUT"
+
+            echo "Wznowienie discovery z run $RESUME"
+
+            exit 0
+
           fi
+
+          PI_RUN=$(gh run list --repo "${{ github.repository }}" \
+
+            --workflow=de_gu_pi.yml --status=completed -L 1 \
+
+            --json databaseId,conclusion -q '.[0].databaseId // empty')
+
+          if [ -n "$PI_RUN" ] && [ "$PI_RUN" != "null" ]; then
+
+            echo "run-id=$PI_RUN" >> "$GITHUB_OUTPUT"
+
+            echo "artifact-name=de-gu-wyniki-pi" >> "$GITHUB_OUTPUT"
+
+            echo "resume=1" >> "$GITHUB_OUTPUT"
+
+            echo "continue=1" >> "$GITHUB_OUTPUT"
+
+            echo "Kontynuacja z piatku (de-gu-wyniki-pi, run $PI_RUN)"
+
+            exit 0
+
+          fi
+
+          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+
+            --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-fri" and .expired==false) | .workflow_run.id' | head -1)
+
+          if [ -n "$RUN_ID" ]; then
+
+            echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+            echo "artifact-name=de-gu-wyniki-fri" >> "$GITHUB_OUTPUT"
+
+            echo "resume=0" >> "$GITHUB_OUTPUT"
+
+            echo "continue=1" >> "$GITHUB_OUTPUT"
+
+            echo "Brak piatku — kumulacja z de-gu-wyniki-fri (run $RUN_ID)"
+
+          else
+
+            echo "continue=1" >> "$GITHUB_OUTPUT"
+
+            echo "Brak artefaktu — pierwszy cykl"
+
+          fi
+
+
 
       - name: Download previous Wyniki (kumulacja cache + Excel)
+
         if: steps.prev_run.outputs.run-id != ''
+
         uses: actions/download-artifact@v4
+
         with:
+
           name: ${{ steps.prev_run.outputs.artifact-name || 'de-gu-wyniki-fri' }}
+
           github-token: ${{ github.token }}
+
           run-id: ${{ steps.prev_run.outputs.run-id }}
+
           path: .
 
-      - name: Discovery (całe Niemcy, serper-only)
+
+
+      - name: Sprawdz czy kontynuowac (harmonogram — Serper z piatku)
+
+        id: cont
+
+        if: |
+          github.event_name == 'schedule' &&
+          steps.prev_run.outputs.artifact-name == 'de-gu-wyniki-pi' &&
+          (github.event.inputs.force_saturday_discovery != 'true')
+
         run: |
-          ARGS="--run-config run_config/mfg_gu_de.json --serper-only-discovery --no-auto-email"
-          if [ "${{ steps.prev_run.outputs.resume }}" = "1" ]; then
-            ARGS="$ARGS --respect-cache"
-            echo "Wznowienie: --respect-cache (pomija znane URL z cache JSON)"
+
+          if python scripts/discovery_should_continue.py; then
+
+            echo "continue=1" >> "$GITHUB_OUTPUT"
+
+          else
+
+            echo "::notice::Sobotnie discovery pominięte — piątek wyczerpał Serper lub osiągnął cel."
+
+            echo "continue=0" >> "$GITHUB_OUTPUT"
+
           fi
+
+
+
+      - name: Discovery czesc 2 (sobota, serper-only)
+
+        if: steps.cont.outputs.continue != '0'
+
+        run: |
+
+          ARGS="--run-config run_config/mfg_gu_de.json --serper-only-discovery --no-auto-email"
+
+          if [ "${{ steps.prev_run.outputs.resume }}" = "1" ]; then
+
+            ARGS="$ARGS --respect-cache"
+
+            echo "Wznowienie: --respect-cache"
+
+          fi
+
           python de_gu_bauunternehmen_scraper.py $ARGS
 
-      - name: Upload Wyniki artifact
-        if: always()
+
+
+      - name: Upload Wyniki artifact (sobota — final discovery)
+
+        if: always() && steps.cont.outputs.continue != '0'
+
         uses: actions/upload-artifact@v4
+
         with:
+
           name: de-gu-wyniki-wed
+
           path: |
+
             Wyniki/
+
             wyslane/
+
+

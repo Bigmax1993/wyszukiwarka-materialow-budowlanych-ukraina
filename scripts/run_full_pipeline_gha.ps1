@@ -64,6 +64,7 @@ if ($DiscoveryRunId) {
     if ($ResumeDiscoveryRunId) {
         Invoke-GhaWorkflow "GU sobota discovery" @{ resume_artifact_run_id = $ResumeDiscoveryRunId }
     } else {
+        Invoke-GhaWorkflow "GU piatek discovery"
         Invoke-GhaWorkflow "GU sobota discovery"
     }
     Invoke-GhaWorkflow "Sync wyniki Google Drive"
