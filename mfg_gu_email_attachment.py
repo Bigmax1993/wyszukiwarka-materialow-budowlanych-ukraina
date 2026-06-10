@@ -32,6 +32,7 @@ LEGACY_ATTACHMENT_PATH = Path(
 # Ten sam scope co przy gdrive_oauth_setup.py (refresh token na GHA).
 DRIVE_READONLY_SCOPES = ("https://www.googleapis.com/auth/drive",)
 PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+GOOGLE_SLIDES_MIME = "application/vnd.google-apps.presentation"
 
 
 def _env_attachment_path() -> Path | None:
@@ -92,11 +93,26 @@ def _load_drive_readonly_credentials():
     return None
 
 
+def _drive_download_to_buffer(service, file_id: str, mime_type: str) -> io.BytesIO:
+    from googleapiclient.http import MediaIoBaseDownload
+
+    if mime_type == GOOGLE_SLIDES_MIME:
+        request = service.files().export_media(fileId=file_id, mimeType=PPTX_MIME)
+    else:
+        request = service.files().get_media(fileId=file_id)
+    buffer = io.BytesIO()
+    downloader = MediaIoBaseDownload(buffer, request)
+    done = False
+    while not done:
+        _status, done = downloader.next_chunk()
+    buffer.seek(0)
+    return buffer
+
+
 def _download_slides_pptx(dest: Path, logger: logging.Logger | None = None) -> bool:
-    """Eksport Google Slides → PPTX (OAuth lub konto usługi)."""
+    """Pobierz PPTX z Drive: natywny Slides (export) lub wrzucony plik (get_media)."""
     try:
         from googleapiclient.discovery import build
-        from googleapiclient.http import MediaIoBaseDownload
     except ImportError:
         if logger:
             logger.warning("Brak google-api-python-client — nie pobrano PPTX ze Slides.")
@@ -108,22 +124,27 @@ def _download_slides_pptx(dest: Path, logger: logging.Logger | None = None) -> b
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     service = build("drive", "v3", credentials=creds, cache_discovery=False)
+    file_id = GOOGLE_SLIDES_PRESENTATION_ID
     try:
-        request = service.files().export_media(
-            fileId=GOOGLE_SLIDES_PRESENTATION_ID,
-            mimeType=PPTX_MIME,
+        meta = (
+            service.files()
+            .get(fileId=file_id, fields="mimeType,name")
+            .execute()
         )
-        buffer = io.BytesIO()
-        downloader = MediaIoBaseDownload(buffer, request)
-        done = False
-        while not done:
-            _status, done = downloader.next_chunk()
+        mime_type = str(meta.get("mimeType") or "")
+        if logger:
+            logger.info(
+                "Drive: %s (mime=%s)",
+                meta.get("name") or file_id,
+                mime_type,
+            )
+        buffer = _drive_download_to_buffer(service, file_id, mime_type)
     except Exception as exc:
         if logger:
             logger.error(
-                "Eksport Slides %s nieudany (%s). Udostępnij prezentację kontu OAuth "
+                "Pobranie PPTX %s nieudane (%s). Udostępnij plik kontu OAuth "
                 "lub konto usługi z GDRIVE_SERVICE_ACCOUNT_JSON.",
-                GOOGLE_SLIDES_PRESENTATION_ID,
+                file_id,
                 exc,
             )
         return False
