@@ -19,14 +19,40 @@ REQUIRED_RETAIL_CHAIN_KEYWORDS = (
     "aldi",
     "rewe",
     "edeka",
-    "lidl",
     "netto",
     "penny",
     "kaufland",
-    "tegut",
     "norma",
-    "rossmann",
-    "dm",
+)
+
+INTERIOR_FITOUT_MARKERS = (
+    "ladeneinrichtung",
+    "ladenausstattung",
+    "shopfitting",
+    "innenausbau",
+    "innenausstatter",
+    "store design",
+    "einrichtungshaus",
+    "möbelbau",
+    "moebelbau",
+    "interior",
+    "interiors",
+    "ladenausbau",
+)
+
+STORE_SHELL_BUILD_MARKERS = (
+    "filialbau",
+    "supermarktbau",
+    "marktneubau",
+    "filialneubau",
+    "discounterbau",
+    "einzelhandelsbau",
+    "handelsbau",
+    "marktbau",
+    "hochbau",
+    "rohbau",
+    "schlüsselfertig",
+    "schluesselfertig",
 )
 
 
@@ -38,6 +64,39 @@ def detect_required_retail_chains(text: str) -> list[str]:
 
 def has_required_retail_chain_mention(text: str) -> bool:
     return bool(detect_required_retail_chains(text))
+
+
+def has_store_shell_build_evidence(text: str) -> bool:
+    """Neubau/Umbau obiektu marketu (Hochbau/Filialbau), nie samo wyposażenie wnętrz."""
+    low = (text or "").lower()
+    if any(m in low for m in STORE_SHELL_BUILD_MARKERS):
+        return True
+    build_activity = any(
+        m in low for m in ("neubau", "umbau", "errichtung", "realisierung", "sanierung")
+    )
+    retail_ctx = _has_retail_store_context(low) or has_required_retail_chain_mention(low)
+    return bool(build_activity and retail_ctx)
+
+
+def is_interior_fitout_specialist(text: str) -> tuple[bool, str]:
+    """True = Ladeneinrichtung / Innenausbau / Shopfitting bez dowodu Filialbau/Hochbau."""
+    low = (text or "").lower()
+    interior = any(m in low for m in INTERIOR_FITOUT_MARKERS)
+    name_interior = any(
+        m in low for m in ("interior", "interiors", "einrichtung", "shopfitting")
+    )
+    strong_shell = any(m in low for m in STORE_SHELL_BUILD_MARKERS) or is_generalunternehmer(
+        low
+    )[0]
+    if name_interior and not strong_shell:
+        return True, "innenausbau_shopfitting"
+    if interior and not strong_shell:
+        return True, "innenausbau_shopfitting"
+    if interior and strong_shell:
+        if has_store_shell_build_evidence(low) and has_market_project_evidence_on_website(low):
+            return False, ""
+        return True, "innenausbau_shopfitting"
+    return False, ""
 
 
 def has_retail_context_without_named_chain(text: str) -> bool:

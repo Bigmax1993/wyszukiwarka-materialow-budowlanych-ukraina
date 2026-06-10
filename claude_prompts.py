@@ -17,7 +17,7 @@ from campaign_keyword_profile import (
     small_company_markers_sample,
 )
 
-_REQUIRED_CHAINS = "aldi, rewe, edeka, lidl, netto, penny, kaufland"
+_REQUIRED_CHAINS = "aldi, rewe, edeka, netto, penny, kaufland, norma"
 PAGE_VERIFY_MAX_CHARS = 18000
 CONTACT_EXTRACT_MAX_CHARS = 16000
 _CONTACT_EXTRACT_TEXT_PRIORITY = (
@@ -133,12 +133,12 @@ def build_page_verify_prompt(
     small_kw = ", ".join(small_company_markers_sample())
     large_kw = ", ".join(large_company_markers_sample())
     return f"""ROLLE
-Du bist Senior-Due-Diligence-Analyst für B2B-Outreach an kleine Bauunternehmen in Deutschland,
-die Lebensmittelmärkte / Filialen NEU BAUEN oder UMBAUEN (Filialbau, Supermarktbau, Marktneubau).
-KEIN Ziel: Einzelhandels-Märkte als Betreiber, Portale, Medien, reine Büro-/Wohn-Sanierung ohne Marktbezug.
+Du bist Senior-Due-Diligence-Analyst für B2B-Outreach an kleine Generalunternehmer in Deutschland,
+die Lebensmittelmärkte / Filialen NEU BAUEN oder UMBAUEN (Filialbau, Supermarktbau, Marktneubau, Hochbau).
+KEIN Ziel: Ladeneinrichtung, Shopfitting, Innenausbau, Einzelhandels-Betreiber, Portale, Medien.
 
 WICHTIG — „Generalunternehmer" steht NICHT immer auf der Website!
-Entscheidend sind PROJEKTNACHWEISE für Märkte/Filialen, nicht das Wort GU.
+Entscheidend: PROJEKTNACHWEIS für Markt-/Filial-BAU (Schale/Hochbau), nicht nur Innenausstattung.
 
 AUFGABE
 Lies den vollständigen Website-Auszug (alle gecrawlten Unterseiten, markiert mit „=== URL ===").
@@ -146,53 +146,49 @@ Inkl. Bildpfade, alt-Texte, Galerie-Beschriftungen, Karriere-Stellen. Passt die 
 Antworte NUR mit einem JSON-Objekt — kein Markdown, kein Kommentar.
 
 WAS ZÄHLT ALS NACHWEIS (Referenzen / Portfolio — KEIN fester Tab nötig)
-• Rubrik Referenzen, Portfolio, Realisierungen, Bauprojekte — aber auch ohne diese Überschrift:
-• Fotos/Galerie von Märkten: Außenansicht, Innenraum, Baustelle, Eröffnung, Umbau
-• Bild-URLs/alt-Texte: rewe-filiale.jpg, aldi-neubau, supermarkt-projekt, filialbau
-• Projektbeschreibungen: „Neubau Rewe …", „Umbau Aldi …", „Filialbau für Lidl"
-• Listen realisierter Filialen/Märkte mit Ortsnamen
-Eine eigene Portfolio-Seite ist NICHT Pflicht — Fotos + kurzer Text reichen.
+• Neubau/Umbau/Sanierung eines Marktgebäudes (Filialbau, Supermarktbau, Marktneubau)
+• Fotos/Galerie: Baustelle, Außenansicht Markt, Eröffnung, Rohbau — nicht nur Regale/Möbel
+• Projektbeschreibungen: „Neubau Rewe …", „Umbau Aldi …", „Filialbau für Netto"
+• Karriere mit Auftraggeber einer erlaubten Kette (z. B. Netto Marken-Discount)
+
+SOFORT is_gu=false / has_retail_context=false
+• Ladeneinrichtung, Shopfitting, Innenausbau, Ladenausstattung, Möbelbau, Store Design
+• Nur Innenausstattung eines Marktes — auch wenn Rewe/Aldi genannt wird
+• Betreiber/Händler (Öffnungszeiten, Prospekt, Filialfinder), Medienportal, Vergabeportal
 
 ENTSCHEIDUNGSBAUM (in dieser Reihenfolge)
-1) primary_role = Betreiber/Händler/Medienportal → is_gu=false (z. B. Öffnungszeiten, Prospekt, Filialfinder)
-2) Dominieren negative Signale (Vergabeportal, 11880, Wikipedia, Jobbörse) → is_gu=false
-3) Kein Hinweis auf BAU/Auftragnehmer (nur Handel, Medien, Verwaltung) → is_gu=false
-4) Baufirma ja, aber KEIN Markt-/Filial-Projektnachweis → has_retail_context=false
-5) Projekte ja, aber nur Büro/Wohn/Gewerbe ohne Supermarkt/Discounter/Filiale → has_retail_context=false
-6) Passt inhaltlich: is_gu=true, has_retail_context=true
-7) matched_chains wenn benannte Kette als Projekt/Auftraggeber — sonst leer (siehe unten)
-8) Größe prüfen → is_small_firm (siehe unten)
+1) Innenausbau/Shopfitting dominiert → is_gu=false
+2) primary_role = Betreiber/Händler/Medienportal/Ladeneinrichter → is_gu=false
+3) Kein BAU/Auftragnehmer → is_gu=false
+4) Baufirma ja, aber KEIN Markt-/Filial-Bauprojekt → has_retail_context=false
+5) Nur Büro/Wohn ohne Supermarkt/Discounter/Filiale → has_retail_context=false
+6) Passt: is_gu=true, has_retail_context=true, matched_chains nicht leer
+7) Größe → is_small_firm
 
-HANDELSKETTE / RETAIL-NACHWEIS (flexibel)
-• Ideal: benannte Kette als Projekt/Auftraggeber ({_REQUIRED_CHAINS})
-• Auch OK ohne Kette im Portfolio: GU/Bauunternehmen + Einzelhandel/Retail/Gewerbebau
-  (z. B. „Einzelhandelsbau", „Retail-Projekte", Karriere: „Auftraggeber Netto")
-• has_retail_context=true wenn Kette ODER klarer Retail-/Markt-Baubezug
-• matched_chains: nur wenn Kette WÖRTLICH vorkommt — sonst []
+HANDELSKETTE — PFLICHT (Whitelist)
+Erlaubt NUR: {_REQUIRED_CHAINS}
+• has_retail_context=true NUR mit Bauprojekt (Neubau/Umbau Marktgebäude) UND mindestens einer Kette in matched_chains
+• matched_chains: nur Kleinbuchstaben, nur wenn Kette WÖRTLICH als Projekt/Auftraggeber genannt
+• Ohne benannte Kette aus der Whitelist → has_retail_context=false
 
 FELD is_small_firm — DU ENTSCHEIDEST (Pflichtfeld)
 Ziel: kleine / regionale Baufirma — KEIN Weltkonzern.
 is_small_firm=true bei z. B.:
 • Familienunternehmen, inhabergeführt, Meisterbetrieb, regional, Mittelstand, GmbH mit einem Standort
 • Typisch < 250 Mitarbeiter — auch wenn „Groep"/„Gruppe"/Muttergesellschaft erwähnt wird
-• Junges regionales GU-Team (z. B. gegründet 2019, Bad Bentheim) mit Retail-Projekten
 is_small_firm=false bei z. B.:
 • STRABAG, Hochtief, Goldbeck, Implenia, PORR, börsennotiert, > 500 MA, global player
-• Dominieren nur Megaprojekte (Flughafen, Autobahn) ohne Retail/Einzelhandel
-Unsicher bei regionaler GmbH mit GU + Einzelhandel/Retail → is_small_firm=true.
 
 KLEIN-INDIZIEN: {small_kw}
 GROSS-INDIZIEN: {large_kw}
 
 FELD is_gu — Bedeutung
-true = Bauauftragnehmer / GU / Baufirma (NICHT Einzelhandels-Betreiber).
-Auch true bei: Generalunternehmer, GU, Bauunternehmen mit Gewerbe- UND Einzelhandelsbau.
+true = Generalunternehmer / Bauunternehmen Hochbau/Filialbau (NICHT Ladeneinrichter).
 
 FELD has_retail_context — Bedeutung
-true = Markt-/Filial-/Einzelhandels-Bezug: Referenzen, Fotos, Auftraggeber, Karriere-Stellen.
-false nur wenn: nur Wohn-/Bürobau ohne jeden Einzelhandels-/Retail-Bezug.
+true = Bauprojekt für Lebensmittelmarkt/Filiale einer Whitelist-Kette.
 
-IM ZWEIFEL: FOR TRUE wenn Bau/GU + Einzelhandel/Retail — FOR FALSE nur bei klarem Betreiber/Portal.
+IM ZWEIFEL: is_gu=false, has_retail_context=false.
 
 HILFS-SCHLÜSSELWÖRTER (nicht alle müssen vorkommen)
 [GU — optional]
@@ -201,24 +197,20 @@ HILFS-SCHLÜSSELWÖRTER (nicht alle müssen vorkommen)
 [RETAIL / FILIALBAU / PROJEKTE]
 {retail_kw}
 
-[SIECI als Projekt]
+[SIECI als Projekt — Pflicht-Whitelist]
 {chain_kw}
 
 [ODRZUĆ wenn dominiert]
 {neg_kw}
 
 BEISPIELE
-✓ JA ohne Wort GU: „Filialbau seit 1990" + Galerie mit Rewe/Aldi-Fotos und „Neubau Filiale Dresden"
+✓ JA: „Filialbau seit 1990" + Galerie Rewe/Aldi Neubau Fotos
 ✓ JA: „Referenzprojekte: Kaufland Umbau Halle, Penny Neubau"
-✓ JA: alt-Text „Innenansicht Rewe Markt nach Umbau" auf Startseite
-✓ JA klein: „Familienunternehmen Filialbau" + 45 Mitarbeiter + Rewe-Referenz → is_small_firm=true
-✓ JA (Wijco-Typ): „Generalunternehmer Gewerbe- und Einzelhandelsbau", Karriere: 
-  „Auftraggeber Netto Marken-Discount", Teil der Groep aber regionale GmbH → 
-  is_gu=true, has_retail_context=true, matched_chains=[netto], is_small_firm=true
-✗ NEIN groß: STRABAG SE, weltweit 77.000 Mitarbeiter → is_small_firm=false
-✗ NEIN: „REWE Markt — Öffnungszeiten, Prospekt" (Betreiber)
-✗ NEIN: „Ladenbau Büros, Praxen, Hotels" ohne ein einziges Marktprojekt
-✗ NEIN: Zeitungsartikel über Baustelle ohne Firmenwebsite der Baufirma
+✓ JA: Karriere „Auftraggeber Netto Marken-Discount" + Generalunternehmer Einzelhandelsbau → matched_chains=[netto]
+✗ NEIN: „Körling Interiors — Ladeneinrichtung für Rewe" (Innenausbau)
+✗ NEIN: „Ladenbau Büros, Praxen, Hotels" ohne Marktprojekt mit Whitelist-Kette
+✗ NEIN: GU Einzelhandelsbau ohne Aldi/Rewe/Edeka/Netto/Penny/Kaufland/Norma im Text
+✗ NEIN: STRABAG SE, 77.000 Mitarbeiter → is_small_firm=false
 
 FELDER JSON (exakt diese Keys)
 {{
@@ -268,7 +260,7 @@ Fehlerhafte Zeilen kosten echte B2B-Mails an falsche Empfänger — sei gnadenlo
 
 ZIELGRUPPE (nur diese Firmen dürfen einen Namen behalten)
 Kleine Generalunternehmer / Bauunternehmen mit Filialbau, Supermarktbau, Neubau oder Umbau von Märkten
-(Aldi, Rewe, Edeka, Lidl, Netto, Penny, Kaufland als Projekt-Referenz).
+(Aldi, Rewe, Edeka, Netto, Penny, Kaufland, Norma als Projekt-Referenz — keine Ladeneinrichtung).
 KEINE Einzelhandels-Märkte als Betreiber. KEINE Portale. KEINE PDF-Titel. KEINE Städte als „Firmenname".
 
 AUFGABE
@@ -299,7 +291,7 @@ Unsicher → "".
 • website → https://firmendomain.tld (Root, keine Unterseite, kein Verzeichnis, kein PDF)
 • url → identisch zur Basis-URL (https://domain.tld)
 • bundesland → GENAU ein Wert aus: [{states}] — sonst ""
-• handelsketten → nur Kleinbuchstaben, kommagetrennt: rewe, aldi, edeka, lidl, netto, penny, kaufland — oder ""
+• handelsketten → nur Kleinbuchstaben, kommagetrennt: rewe, aldi, edeka, netto, penny, kaufland, norma — oder ""
 • email_nur_info: NICHT in JSON übernehmen — nur zur Plausibilitätsprüfung
 
 NEGATIV-BEISPIELE (alles → leere Felder oder Name "")

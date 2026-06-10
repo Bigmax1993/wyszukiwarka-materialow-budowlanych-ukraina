@@ -12,7 +12,9 @@ from de_gu_keywords import (
 )
 from retail_store_builder_filter import (
     FILIALBAU_SPECIALIST_MARKERS,
+    INTERIOR_FITOUT_MARKERS,
     NON_GU_ROLE_EXCLUSION_MARKERS,
+    REQUIRED_RETAIL_CHAIN_KEYWORDS,
     RETAIL_STORE_BUILD_MARKERS,
     RETAIL_STORE_UMBAU_MARKERS,
     STRICT_GU_MARKERS,
@@ -28,6 +30,10 @@ REJECT_PRIMARY_ROLES = frozenset(
         "Planungsbüro",
         "Subunternehmer",
         "Nachunternehmer",
+        "Ladeneinrichter",
+        "Innenausstatter",
+        "Shopfitter",
+        "Ladenausstatter",
         "Sonstiges",
     }
 )
@@ -60,7 +66,7 @@ def retail_context_keywords_sample(*, max_items: int = 16) -> list[str]:
 
 
 def retail_chain_keywords_sample(*, max_items: int = 12) -> list[str]:
-    return list(RETAIL_CHAIN_KEYWORDS)[:max_items]
+    return list(REQUIRED_RETAIL_CHAIN_KEYWORDS)[:max_items]
 
 
 def small_company_markers_sample(*, max_items: int = 10) -> list[str]:
@@ -100,7 +106,11 @@ def large_company_markers_sample(*, max_items: int = 14) -> list[str]:
 def negative_keywords_sample(*, max_items: int = 14) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
-    for item in (*NON_GU_ROLE_EXCLUSION_MARKERS, *SERPER_NEGATIVE_TERMS[:20]):
+    for item in (
+        *NON_GU_ROLE_EXCLUSION_MARKERS,
+        *INTERIOR_FITOUT_MARKERS,
+        *SERPER_NEGATIVE_TERMS[:20],
+    ):
         key = item.strip().lower()
         if key and key not in seen:
             seen.add(key)

@@ -1,81 +1,268 @@
 #Requires -Version 5.1
+
 <#
+
 Uruchamia pelny pipeline GU na GitHub Actions (recznie, krok po kroku).
+
+
 
   powershell -ExecutionPolicy Bypass -File scripts\run_full_pipeline_gha.ps1
 
+
+
 Opcje:
+
   -SkipDiscovery   pomin discovery + pierwszy sync
+
   -SkipBackfill    pomin backfill (sync -> prep -> send po gotowym thu)
+
   -ForceResend     ponowna wysylka (--force-resend na obu partiach)
+
+  -StrictDiscovery przy timeout/failure discovery przerwij (domyslnie: kontynuuj gdy jest artefakt)
+
 #>
+
 param(
+
     [switch]$SkipDiscovery,
+
     [switch]$SkipBackfill,
+
     [switch]$ForceResend,
+
+    [switch]$StrictDiscovery,
+
     [string]$DiscoveryRunId = "",
+
     [string]$ResumeDiscoveryRunId = ""
+
 )
 
+
+
 $ErrorActionPreference = "Stop"
+
 $Repo = "Bigmax1993/Wyszukiwarka-partnerow"
 
-function Invoke-GhaWorkflow {
-    param(
-        [string]$Name,
-        [hashtable]$Fields = @{}
-    )
-    Write-Host ""
-    Write-Host "=== $Name ===" -ForegroundColor Cyan
-    if ($Fields.Count -gt 0) {
-        $wfArgs = @()
-        foreach ($k in $Fields.Keys) {
-            $wfArgs += "-f"
-            $wfArgs += "${k}=$($Fields[$k])"
-        }
-        gh workflow run $Name -R $Repo @wfArgs
-    } else {
-        gh workflow run $Name -R $Repo
-    }
-    Start-Sleep -Seconds 12
-    $runId = gh run list -R $Repo --workflow=$Name -L 1 --json databaseId -q ".[0].databaseId"
-    if (-not $runId) { throw "Brak run ID dla $Name" }
-    Write-Host "URL: https://github.com/$Repo/actions/runs/$runId"
-    gh run watch $runId -R $Repo --exit-status
-    if ($LASTEXITCODE -ne 0) {
-        throw "Workflow $Name nie powiodl sie (run $runId)"
-    }
-    Write-Host "OK: $Name" -ForegroundColor Green
+$DiscoveryArtifacts = @("de-gu-wyniki-pi", "de-gu-wyniki-wed")
+
+$script:DiscoveryRunIds = @()
+
+
+
+function Get-RunConclusion {
+
+    param([string]$RunId)
+
+    gh run view $RunId -R $Repo --json conclusion -q .conclusion
+
 }
+
+
+
+function Get-RunArtifactNames {
+
+    param([string]$RunId)
+
+    $raw = gh api "repos/$Repo/actions/runs/$RunId/artifacts" --jq '.artifacts[].name' 2>$null
+
+    if (-not $raw) { return @() }
+
+    return @($raw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
+}
+
+
+
+function Test-RunHasDiscoveryArtifact {
+
+    param(
+
+        [string]$RunId,
+
+        [string[]]$AlsoCheckRunIds = @()
+
+    )
+
+    $runs = @($RunId) + @($AlsoCheckRunIds) | Where-Object { $_ } | Select-Object -Unique
+
+    foreach ($rid in $runs) {
+
+        $names = Get-RunArtifactNames $rid
+
+        foreach ($artifact in $DiscoveryArtifacts) {
+
+            if ($names -contains $artifact) { return $true }
+
+        }
+
+    }
+
+    return $false
+
+}
+
+
+
+function Wait-GhaRun {
+
+    param(
+
+        [string]$Name,
+
+        [string]$RunId,
+
+        [switch]$ContinueOnDiscoveryArtifact
+
+    )
+
+    Write-Host "URL: https://github.com/$Repo/actions/runs/$RunId"
+
+    gh run watch $RunId -R $Repo --exit-status
+
+    if ($LASTEXITCODE -eq 0) {
+
+        Write-Host "OK: $Name" -ForegroundColor Green
+
+        return
+
+    }
+
+    if ($ContinueOnDiscoveryArtifact -and -not $StrictDiscovery) {
+
+        if (Test-RunHasDiscoveryArtifact -RunId $RunId -AlsoCheckRunIds $script:DiscoveryRunIds) {
+
+            $conclusion = Get-RunConclusion $RunId
+
+            Write-Host ""
+
+            Write-Host "UWAGA: $Name zakonczyl sie jako '$conclusion' (run $RunId, np. timeout 360 min)." -ForegroundColor Yellow
+
+            Write-Host "       Jest artefakt discovery (pi/wed) — kontynuuje pipeline (backfill itd.)." -ForegroundColor Yellow
+
+            return
+
+        }
+
+    }
+
+    throw "Workflow $Name nie powiodl sie (run $RunId)"
+
+}
+
+
+
+function Invoke-GhaWorkflow {
+
+    param(
+
+        [string]$Name,
+
+        [hashtable]$Fields = @{},
+
+        [switch]$ContinueOnDiscoveryArtifact
+
+    )
+
+    Write-Host ""
+
+    Write-Host "=== $Name ===" -ForegroundColor Cyan
+
+    if ($Fields.Count -gt 0) {
+
+        $wfArgs = @()
+
+        foreach ($k in $Fields.Keys) {
+
+            $wfArgs += "-f"
+
+            $wfArgs += "${k}=$($Fields[$k])"
+
+        }
+
+        gh workflow run $Name -R $Repo @wfArgs
+
+    } else {
+
+        gh workflow run $Name -R $Repo
+
+    }
+
+    Start-Sleep -Seconds 12
+
+    $runId = gh run list -R $Repo --workflow=$Name -L 1 --json databaseId -q ".[0].databaseId"
+
+    if (-not $runId) { throw "Brak run ID dla $Name" }
+
+    Wait-GhaRun -Name $Name -RunId $runId -ContinueOnDiscoveryArtifact:$ContinueOnDiscoveryArtifact
+
+    if ($ContinueOnDiscoveryArtifact) {
+
+        $script:DiscoveryRunIds += $runId
+
+    }
+
+    return $runId
+
+}
+
+
 
 $sendFields = @{}
+
 if ($ForceResend) { $sendFields["force_resend"] = "true" }
 
+
+
 if ($DiscoveryRunId) {
+
     Write-Host ""
+
     Write-Host "=== GU sobota discovery (juz trwa: $DiscoveryRunId) ===" -ForegroundColor Cyan
-    Write-Host "URL: https://github.com/$Repo/actions/runs/$DiscoveryRunId"
-    gh run watch $DiscoveryRunId -R $Repo --exit-status
-    if ($LASTEXITCODE -ne 0) {
-        throw "Workflow GU sobota discovery nie powiodl sie (run $DiscoveryRunId)"
-    }
-    Write-Host "OK: GU sobota discovery" -ForegroundColor Green
+
+    Wait-GhaRun -Name "GU sobota discovery" -RunId $DiscoveryRunId -ContinueOnDiscoveryArtifact
+
+    $script:DiscoveryRunIds += $DiscoveryRunId
+
 } elseif (-not $SkipDiscovery) {
+
     if ($ResumeDiscoveryRunId) {
-        Invoke-GhaWorkflow "GU sobota discovery" @{ resume_artifact_run_id = $ResumeDiscoveryRunId }
+
+        Invoke-GhaWorkflow "GU sobota discovery" @{
+
+            resume_artifact_run_id = $ResumeDiscoveryRunId
+
+        } -ContinueOnDiscoveryArtifact
+
     } else {
-        Invoke-GhaWorkflow "GU piatek discovery"
-        Invoke-GhaWorkflow "GU sobota discovery"
+
+        Invoke-GhaWorkflow "GU piatek discovery" @{} -ContinueOnDiscoveryArtifact
+
+        Invoke-GhaWorkflow "GU sobota discovery" @{} -ContinueOnDiscoveryArtifact
+
     }
+
     Invoke-GhaWorkflow "Sync wyniki Google Drive"
+
 }
+
 if (-not $SkipBackfill) {
+
     Invoke-GhaWorkflow "GU niedziela backfill"
+
 }
+
 Invoke-GhaWorkflow "Sync wyniki Google Drive" @{ artifact_name = "de-gu-wyniki-thu" }
+
 Invoke-GhaWorkflow "GU poniedzialek prep"
+
 Invoke-GhaWorkflow "GU poniedzialek send" $sendFields
+
 Invoke-GhaWorkflow "GU wtorek send" $sendFields
 
+
+
 Write-Host ""
+
 Write-Host "Pipeline zakonczony pomyslnie." -ForegroundColor Green
+

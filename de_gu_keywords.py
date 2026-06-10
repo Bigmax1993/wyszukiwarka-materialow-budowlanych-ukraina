@@ -46,11 +46,11 @@ DE_OST_RURAL_HINTS = _ost.DE_OST_RURAL_HINTS
 RETAIL_CHAINS_ROTATION = (
     "Aldi",
     "Rewe",
-    "Kaufland",
-    "Lidl",
-    "Netto",
     "Edeka",
+    "Netto",
     "Penny",
+    "Kaufland",
+    "Norma",
 )
 
 TERM_TEMPLATES = (

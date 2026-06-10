@@ -72,7 +72,8 @@ class RetailReferenceEvidence(unittest.TestCase):
     def test_required_chain_detection(self):
         self.assertTrue(has_required_retail_chain_mention("Referenzprojekt Aldi Nord"))
         self.assertEqual(
-            set(detect_required_retail_chains("Penny und Lidl")), {"penny", "lidl"}
+            set(detect_required_retail_chains("Penny und Kaufland")),
+            {"penny", "kaufland"},
         )
         self.assertFalse(has_required_retail_chain_mention("Discounter Markt Neubau"))
 

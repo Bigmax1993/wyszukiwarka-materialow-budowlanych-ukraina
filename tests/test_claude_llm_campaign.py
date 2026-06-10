@@ -138,7 +138,7 @@ class PageVerifyTest(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIn("aldi", chains)
 
-    def test_apply_verdict_accepts_gu_einzelhandel_without_named_chain(self):
+    def test_apply_verdict_rejects_gu_einzelhandel_without_named_chain(self):
         llm = {
             "is_gu": True,
             "has_retail_context": True,
@@ -159,8 +159,9 @@ class PageVerifyTest(unittest.TestCase):
             page_text=page,
             require_generalunternehmer=True,
         )
-        self.assertTrue(ok)
-        self.assertIn("claude", reason)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "keine_handelskette")
+        self.assertEqual(chains, [])
 
     def test_apply_verdict_accepts_wijco_style_karriere_netto(self):
         llm = {
@@ -202,6 +203,26 @@ class PageVerifyTest(unittest.TestCase):
         )
         self.assertFalse(ok)
         self.assertIn("kleinunternehmen", reason)
+
+    def test_apply_verdict_rejects_interior_fitout(self):
+        llm = {
+            "is_gu": True,
+            "has_retail_context": True,
+            "is_small_firm": True,
+            "primary_role": "Ladeneinrichter",
+            "matched_gu_keywords": ["generalunternehmer"],
+            "matched_retail_keywords": ["ladenbau"],
+            "matched_chains": ["rewe"],
+            "matched_negative_keywords": [],
+            "reason": "Ladenbau Referenz Rewe",
+        }
+        page = (
+            "Körling Interiors GmbH — Generalunternehmer Ladenbau. "
+            "Ladeneinrichtung und Shopfitting. Referenz Rewe Markt."
+        )
+        ok, reason, _ = apply_page_verdict(llm, page_text=page)
+        self.assertFalse(ok)
+        self.assertIn("innenausbau", reason)
 
     def test_apply_verdict_rejects_operator_context(self):
         llm = {

@@ -133,7 +133,7 @@ Przed wysyłką workflow **pobiera świeży PPTX** ze Slides (`scripts/export_mf
 
 
 
-Pełny cykl (PC, czeka na każdy krok):
+Pełny cykl (PC, czeka na każdy krok). Przy **timeout 360 min** discovery (status failure) skrypt **kontynuuje**, jeśli run zapisał artefakt `de-gu-wyniki-pi` lub `de-gu-wyniki-wed` (`-StrictDiscovery` = stare zachowanie, przerwij):
 
 
 

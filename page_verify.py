@@ -11,10 +11,10 @@ from retail_store_builder_filter import (
     REQUIRED_RETAIL_CHAIN_KEYWORDS,
     detect_required_retail_chains,
     has_market_project_evidence_on_website,
-    has_retail_context_without_named_chain,
-    has_required_retail_chain_mention,
+    has_store_shell_build_evidence,
     is_excluded_non_gu_role,
     is_generalunternehmer,
+    is_interior_fitout_specialist,
     is_media_publisher_contact,
     is_retail_store_operator_contact,
     qualifies_as_gu_for_campaign,
@@ -38,6 +38,9 @@ def hard_reject_page_context(
         return True, "medienportal"
     if is_excluded_non_gu_role(blob):
         return True, "excluded_non_gu_role"
+    interior, interior_reason = is_interior_fitout_specialist(blob)
+    if interior:
+        return True, interior_reason
     return False, ""
 
 
@@ -133,12 +136,11 @@ def apply_page_verdict(
     ]
     blob_chains = detect_required_retail_chains(blob)
     chains = list(dict.fromkeys(llm_chains + blob_chains))
-    if (
-        not chains
-        and not has_required_retail_chain_mention(blob)
-        and not has_retail_context_without_named_chain(blob)
-    ):
+    if not chains:
         return False, "keine_handelskette", []
+
+    if not has_store_shell_build_evidence(blob):
+        return False, "kein_filialbau_hochbau", chains
 
     if require_small_firm and not llm.get("is_small_firm"):
         return False, "claude_kein_kleinunternehmen", chains

@@ -23,8 +23,10 @@ class TestClaudePrompts(unittest.TestCase):
         self.assertIn("is_gu", p)
         self.assertIn("Test GmbH", p)
         self.assertIn("rewe", p.lower())
-        self.assertIn("Wijco", p)
+        self.assertIn("Whitelist", p)
         self.assertIn("Auftraggeber Netto", p)
+        self.assertIn("norma", p.lower())
+        self.assertNotIn("IM ZWEIFEL: FOR TRUE", p)
 
     def test_prioritize_page_text_puts_retail_lines_first(self):
         long_tail = "x " * 5000

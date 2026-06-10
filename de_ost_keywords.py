@@ -144,9 +144,10 @@ REQUIRED_RETAIL_CHAIN_KEYWORDS = (
     "aldi",
     "rewe",
     "edeka",
-    "lidl",
     "netto",
     "penny",
+    "kaufland",
+    "norma",
 )
 
 RETAIL_CHAIN_KEYWORDS = (
