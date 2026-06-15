@@ -13,8 +13,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+LIBS = ROOT / "libs"
+for _p in (ROOT, LIBS):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from libs.scraper_email_replies import ReplySyncConfig, write_excel_with_reply_styles  # noqa: E402
 
