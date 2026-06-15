@@ -18,7 +18,7 @@ Opcje:
 
   -ForceResend     ponowna wysylka (--force-resend na obu partiach)
 
-  -FullDiscovery   uruchom 5 etapow discovery (mon, tue, wed, thu, fri) po kolei
+  -FullDiscovery   uruchom 5 etapow discovery (mon..fri) po kolei, potem backfill+send
 
   -StrictDiscovery przy timeout/failure discovery przerwij (domyslnie: kontynuuj gdy jest artefakt pi)
 
@@ -252,8 +252,6 @@ if ($DiscoveryRunId) {
         Invoke-GhaWorkflow $DiscoveryWorkflow @{} -ContinueOnDiscoveryArtifact
 
     }
-
-    Invoke-GhaWorkflow "Sync wyniki Google Drive"
 
 }
 

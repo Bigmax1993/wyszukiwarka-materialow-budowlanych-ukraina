@@ -1,4 +1,4 @@
-# CZWARTEK — dzień 2: backfill e-maili + przebudowa Excela (bez Serpera, bez wysyłki).
+# CZWARTEK — niedziela: backfill e-maili + przebudowa Excela (bez Serpera, bez wysyłki).
 # Task Scheduler: niedziela 06:00
 # Jeśli piątek nie skończył discovery — najpierw dokończ: run_piatek_discovery.ps1, potem ten skrypt.
 
@@ -8,7 +8,7 @@ Enter-GuCampaign
 $env:SCRAPER_TIMEZONE = "Europe/Warsaw"
 Remove-Item Env:DISABLE_SEND_WINDOW -ErrorAction SilentlyContinue
 
-Write-Host "[NIEDZIELA] Weryfikacja www (pending ze sro-czw-pt)..."
+Write-Host "[NIEDZIELA] Weryfikacja www (pending z discovery pon-pt)..."
 python de_gu_bauunternehmen_scraper.py --verify-pending-contacts
 
 Write-Host "[NIEDZIELA] Backfill e-maili z cache..."

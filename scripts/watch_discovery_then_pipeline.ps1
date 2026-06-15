@@ -298,14 +298,6 @@ Wait-Workflow "GU discovery" $DiscoveryRunId
 
 
 
-Start-Workflow "Sync wyniki Google Drive"
-
-
-
-
-
-
-
 $pipeArgs = @("-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "run_full_pipeline_gha.ps1"), "-SkipDiscovery")
 
 

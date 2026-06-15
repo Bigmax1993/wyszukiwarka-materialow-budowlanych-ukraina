@@ -1,6 +1,5 @@
 # PONIEDZIALEK — wysylka partia 1 (okno 8-18 wg Europe/Berlin, limit 300/dzien).
-
-# Task Scheduler: poniedzialek 12:00
+# Task Scheduler: poniedzialek 09:00 (po prep 07:00)
 
 
 

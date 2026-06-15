@@ -6,7 +6,8 @@ on:
 
   schedule:
 
-    - cron: "30 3 * * 0"
+    - cron: "30 5 * * 0"
+      timezone: Europe/Warsaw
 
   workflow_dispatch:
 
@@ -14,7 +15,7 @@ on:
 
       artifact_run_id:
 
-        description: "Opcjonalnie run ID piatku (de-gu-wyniki-pi). Puste = najnowszy pi."
+        description: "Opcjonalnie run ID piątku (de-gu-wyniki-pi). Puste = najnowszy pi."
 
         required: false
 
@@ -78,7 +79,7 @@ jobs:
 
 
 
-      - name: Resolve artifact run (piatek)
+      - name: Resolve artifact run (piatek, koniec discovery pon-pt)
 
         id: artifact_run
 
@@ -122,7 +123,7 @@ jobs:
 
 
 
-      - name: Download cache from discovery (piatek)
+      - name: Download cache from discovery (piatek / de-gu-wyniki-pi)
 
         uses: actions/download-artifact@v4
 

@@ -32,33 +32,22 @@ Repozytorium: [Wyszukiwarka-partnerow](https://github.com/Bigmax1993/Wyszukiwark
 
 
 
-## Harmonogram cron (UTC → czas PL, CEST)
+## Harmonogram cron (Europe/Warsaw)
 
 
 
-| Dzień | Workflow | Cron UTC | ≈ czas PL |
-
-|-------|----------|----------|-----------|
-
-| **Poniedziałek** | discovery część 1 | `0 17 * * 1` (Europe/Warsaw) | **17:00** |
-| **Wtorek** | discovery część 2 | `0 15 * * 2` (Europe/Warsaw) | **15:00** |
-| **Środa** | discovery część 3 | `0 19 * * 3` (Europe/Warsaw) | **19:00** |
-| **Czwartek** | discovery część 4 | `0 20 * * 4` (Europe/Warsaw) | **20:00** |
-| **Piątek** | discovery część 5 | `0 16 * * 5` (Europe/Warsaw) | **16:00** |
-
-| **Niedziela** | backfill | `30 3 * * 0` | **05:30** |
-
-| **Poniedziałek** | sync Drive | `0 4 * * 1` | **06:00** |
-
-| **Poniedziałek** | prep | `0 6 * * 1` | **08:00** |
-
-| **Poniedziałek** | send 1 | `0 7 * * 1` (Europe/Warsaw) | **07:00** |
-
-| **Wtorek** | send 2 | `0 7 * * 2` | **09:00** |
-
-
-
-Zimą (CET): send 1 `0 7 * * 1` (Europe/Warsaw), sync Drive `0 6 * * 1` (Europe/Warsaw).
+| Dzień | Workflow | Cron | Godzina PL |
+|-------|----------|------|------------|
+| **Poniedziałek** | discovery część 1 | `0 17 * * 1` | **17:00** |
+| **Wtorek** | discovery część 2 | `0 15 * * 2` | **15:00** |
+| **Środa** | discovery część 3 | `0 19 * * 3` | **19:00** |
+| **Czwartek** | discovery część 4 | `0 20 * * 4` | **20:00** |
+| **Piątek** | discovery część 5 | `0 16 * * 5` | **16:00** |
+| **Niedziela** | backfill | `30 5 * * 0` | **05:30** |
+| **Poniedziałek** | sync Drive | `0 6 * * 1` | **06:00** |
+| **Poniedziałek** | prep | `0 7 * * 1` | **07:00** |
+| **Poniedziałek** | send 1 | `0 9 * * 1` | **09:00** |
+| **Wtorek** | send 2 | `0 9 * * 2` | **09:00** |
 
 
 
@@ -95,13 +84,13 @@ Setup OAuth: `python scripts/gdrive_oauth_setup.py` — szczegóły w [`GOOGLE_D
 
 ```
 
-pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela → thu → sync Drive → pon prep → mon → pon send → tue → wt send → fri
+pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela→thu → sync Drive → pon prep→mon → pon send→tue → wt send→fri
 
 ```
 
 
 
-Poniedziałek discovery: `de-gu-wyniki-fri` → `de-gu-wyniki-pi`. Wtorek–piątek: kontynuacja z `pi` (`--respect-cache`). Niedziela backfill: najnowszy `de-gu-wyniki-pi`.
+Poniedziałek 17:00 (discovery): `de-gu-wyniki-fri` → `de-gu-wyniki-pi` (nowy tydzień). Wtorek–piątek: kontynuacja z `pi`. Niedziela backfill: najnowszy `de-gu-wyniki-pi` (piątek). Poniedziałek rano: prep (07:00) przed wysyłką (09:00); wieczorem (17:00) start kolejnego tygodnia discovery.
 
 **Sync Drive** (pon 06:00 PL) pobiera **`de-gu-wyniki-thu`** z niedzielnego backfillu — kolejność: `thu` → `mon` → `tue` → `fri`. Nie używa `fri`/`tue` z poprzedniej wysyłki, dopóki istnieje `thu`.
 
@@ -168,6 +157,12 @@ gh workflow run "GU wtorek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_r
 
 
 
-Kolejność: discovery → backfill → sync Drive → prep → pon send → wt send.
+Kolejność: discovery (pon–pt) → backfill → sync Drive → prep → pon send → wt send.
+
+Po piątkowym discovery (ręcznie):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\resume_pipeline_after_pi.ps1 -PiRunId RUN_ID
+```
 
 

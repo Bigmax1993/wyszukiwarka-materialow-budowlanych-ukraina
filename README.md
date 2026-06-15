@@ -152,11 +152,11 @@ python de_gu_bauunternehmen_scraper.py --run-config run_config\welle_nrw_by_bw.j
 
 | E-mail | 300 / dzień kalendarzowy, 2 / domena / dzień (pon 300 + wt 300) |
 
-| 1 Bundesland / tydzień | ~40–60 fraz Serper (mieści się w 1 piątek) |
+| 1 Bundesland / tydzień | ~40–60 fraz Serper × 5 dni discovery |
 
 
 
-## Harmonogram 5 dni
+## Harmonogram tygodnia
 
 
 
@@ -174,11 +174,13 @@ Szczegóły: [`schedule/PLAN_5_DNI.md`](schedule/PLAN_5_DNI.md)
 | **Czwartek** | **20:00** | `run_czwartek_discovery.ps1` | `GU discovery` (część 4) |
 | **Piątek** | **16:00** | `run_piatek_discovery.ps1` | `GU discovery` (część 5) |
 
-| **Niedziela** | 06:00 | `run_czwartek.ps1` | `GU niedziela backfill` |
+| **Niedziela** | 06:00 | `run_czwartek.ps1` | `GU niedziela backfill` (~05:30) |
 
-| **Poniedziałek** | 08:00 | `run_poniedzialek_prep.ps1` | `GU poniedzialek prep` |
+| **Poniedziałek** | **06:00** | — | `Sync wyniki Google Drive` |
 
-| **Poniedziałek** | **07:00** | `run_poniedzialek_send.ps1` | `GU poniedzialek send` (partia 1) |
+| **Poniedziałek** | **07:00** | `run_poniedzialek_prep.ps1` | `GU poniedzialek prep` |
+
+| **Poniedziałek** | **09:00** | `run_poniedzialek_send.ps1` | `GU poniedzialek send` (partia 1) |
 
 | **Wtorek** | **09:00** | `run_wtorek.ps1` | `GU wtorek send` (partia 2) |
 
