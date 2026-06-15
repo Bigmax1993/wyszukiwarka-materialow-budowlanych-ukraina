@@ -11,7 +11,7 @@
   "claude_unlimited": true,
   "claude_discovery_max_rounds": 3,
   "claude_discovery_terms_per_round": 8,
-  "serper_discovery_reserve": 1000,
+  "serper_discovery_reserve": 333,
   "claude_daily_limit": 3000,
   "claude_discovery_reserve": 1000,
   "claude_discovery_min_gain": 1
