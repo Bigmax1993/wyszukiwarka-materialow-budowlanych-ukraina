@@ -2,8 +2,8 @@ name: GU poniedzialek send
 
 on:
   schedule:
-    # 10:00 UTC = 12:00 PL (CEST); zimą (CET) ustaw 11:00 UTC (12:00 PL)
-    - cron: "0 10 * * 1"
+    - cron: "0 7 * * 1"
+      timezone: Europe/Warsaw
   workflow_dispatch:
     inputs:
       artifact_run_id:

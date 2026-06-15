@@ -174,7 +174,7 @@ Szczegóły: [`schedule/PLAN_5_DNI.md`](schedule/PLAN_5_DNI.md)
 
 | **Poniedziałek** | 08:00 | `run_poniedzialek_prep.ps1` | `GU poniedzialek prep` |
 
-| **Poniedziałek** | **12:00** | `run_poniedzialek_send.ps1` | `GU poniedzialek send` (partia 1) |
+| **Poniedziałek** | **07:00** | `run_poniedzialek_send.ps1` | `GU poniedzialek send` (partia 1) |
 
 | **Wtorek** | **09:00** | `run_wtorek.ps1` | `GU wtorek send` (partia 2) |
 

@@ -50,7 +50,7 @@ Repozytorium: [Wyszukiwarka-partnerow](https://github.com/Bigmax1993/Wyszukiwark
 
 | **Poniedziałek** | prep | `0 6 * * 1` | **08:00** |
 
-| **Poniedziałek** | send 1 | `0 10 * * 1` | **12:00** |
+| **Poniedziałek** | send 1 | `0 7 * * 1` (Europe/Warsaw) | **07:00** |
 
 | **Wtorek** | send 2 | `0 7 * * 2` | **09:00** |
 

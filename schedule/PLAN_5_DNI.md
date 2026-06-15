@@ -11,7 +11,7 @@ Wysyłka **pon 12:00** + **wt 09:00** (2×300 maili/dzień).
 | **Niedziela** | 06:00 | `run_czwartek.ps1` | `GU niedziela backfill` (~05:30 Actions) |
 | **Poniedziałek** | **06:00** | — | `Sync wyniki Google Drive` |
 | **Poniedziałek** | 08:00 | `run_poniedzialek_prep.ps1` | `GU poniedzialek prep` |
-| **Poniedziałek** | **12:00** | `run_poniedzialek_send.ps1` | `GU poniedzialek send` (partia 1) |
+| **Poniedziałek** | **07:00** | `run_poniedzialek_send.ps1` | `GU poniedzialek send` (partia 1) |
 | **Wtorek** | **09:00** | `run_wtorek.ps1` | `GU wtorek send` (partia 2) |
 
 | Dzień | Co robi |
