@@ -1,13 +1,27 @@
-name: GU piatek discovery
+name: GU discovery
 
 on:
   schedule:
-    - cron: "0 20 * * 5"
+    - cron: "0 20 * * 3"
+      timezone: Europe/Warsaw
+    - cron: "0 20 * * 4"
+      timezone: Europe/Warsaw
+    - cron: "0 17 * * 5"
       timezone: Europe/Warsaw
   workflow_dispatch:
     inputs:
+      discovery_phase:
+        description: "Etap discovery: auto (dzien PL) | wed | thu | fri"
+        required: false
+        type: choice
+        options:
+          - auto
+          - wed
+          - thu
+          - fri
+        default: auto
       resume_artifact_run_id:
-        description: "Wznow discovery z artefaktu pi (run ID). Puste = nowy run z fri."
+        description: "Wznow z konkretnego run ID (de-gu-wyniki-pi). Puste = wg fazy."
         required: false
         type: string
 
@@ -40,29 +54,60 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install chromium --with-deps
 
-      - name: Resolve artifact run (wznowienie pi lub poprzedni wtorek send)
+      - name: Resolve artifact run (sroda / czwartek / piatek)
         id: prev_run
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          RESUME="${{ github.event_name == 'workflow_dispatch' && inputs.resume_artifact_run_id || '' }}"
-          if [ -n "$RESUME" ]; then
-            echo "run-id=$RESUME" >> "$GITHUB_OUTPUT"
+          RESUME_INPUT="${{ github.event_name == 'workflow_dispatch' && inputs.resume_artifact_run_id || '' }}"
+          if [ -n "$RESUME_INPUT" ]; then
+            echo "run-id=$RESUME_INPUT" >> "$GITHUB_OUTPUT"
             echo "artifact-name=de-gu-wyniki-pi" >> "$GITHUB_OUTPUT"
             echo "resume=1" >> "$GITHUB_OUTPUT"
-            echo "Wznowienie discovery z de-gu-wyniki-pi (run $RESUME)"
+            echo "phase=manual" >> "$GITHUB_OUTPUT"
+            echo "Wznowienie discovery z de-gu-wyniki-pi (run $RESUME_INPUT)"
             exit 0
           fi
-          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
-            --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-fri" and .expired==false) | .workflow_run.id' | head -1)
-          if [ -n "$RUN_ID" ]; then
-            echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "artifact-name=de-gu-wyniki-fri" >> "$GITHUB_OUTPUT"
-            echo "resume=0" >> "$GITHUB_OUTPUT"
-            echo "Kumuluje cache z de-gu-wyniki-fri (run $RUN_ID)"
+
+          PHASE="${{ github.event_name == 'workflow_dispatch' && inputs.discovery_phase || 'auto' }}"
+          if [ "$PHASE" = "auto" ]; then
+            DOW=$(TZ=Europe/Warsaw date +%u)
+            case "$DOW" in
+              3) PHASE=wed ;;
+              4) PHASE=thu ;;
+              5) PHASE=fri ;;
+              *)
+                echo "::warning::Poza sro-czw-pt (DOW=$DOW) — probuje kontynuacje z pi"
+                PHASE=thu
+                ;;
+            esac
+          fi
+          echo "phase=$PHASE" >> "$GITHUB_OUTPUT"
+          echo "Faza discovery: $PHASE"
+
+          if [ "$PHASE" = "wed" ]; then
+            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-fri" and .expired==false) | .workflow_run.id' | head -1)
+            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+              echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+              echo "artifact-name=de-gu-wyniki-fri" >> "$GITHUB_OUTPUT"
+              echo "resume=0" >> "$GITHUB_OUTPUT"
+              echo "Sroda: nowy tydzien, cache z de-gu-wyniki-fri (run $RUN_ID)"
+            else
+              echo "Sroda: brak fri — pierwszy cykl (pusty start)"
+            fi
           else
-            echo "Brak poprzedniego artefaktu — pierwszy cykl"
+            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-pi" and .expired==false) | .workflow_run.id' | head -1)
+            if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+              echo "::error::Brak de-gu-wyniki-pi — uruchom najpierw srode discovery (faza wed)"
+              exit 1
+            fi
+            echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "artifact-name=de-gu-wyniki-pi" >> "$GITHUB_OUTPUT"
+            echo "resume=1" >> "$GITHUB_OUTPUT"
+            echo "Kontynuacja ($PHASE) z de-gu-wyniki-pi (run $RUN_ID)"
           fi
 
       - name: Download previous Wyniki (kumulacja cache + Excel)
@@ -74,16 +119,18 @@ jobs:
           run-id: ${{ steps.prev_run.outputs.run-id }}
           path: .
 
-      - name: Discovery (piatek, serper-only)
+      - name: Discovery (serper-only, sro-czw-pt)
         run: |
           ARGS="--run-config run_config/mfg_gu_de.json --serper-only-discovery --no-auto-email"
           if [ "${{ steps.prev_run.outputs.resume }}" = "1" ]; then
             ARGS="$ARGS --respect-cache"
-            echo "Wznowienie: --respect-cache"
+            echo "Kontynuacja: --respect-cache"
+          else
+            echo "Nowy etap tygodnia (sroda lub pierwszy cykl)"
           fi
           python de_gu_bauunternehmen_scraper.py $ARGS
 
-      - name: Upload Wyniki artifact (piatek)
+      - name: Upload Wyniki artifact (discovery)
         if: always()
         uses: actions/upload-artifact@v4
         with:

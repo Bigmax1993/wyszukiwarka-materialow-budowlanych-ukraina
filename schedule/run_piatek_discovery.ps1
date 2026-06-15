@@ -1,5 +1,5 @@
-# PIATEK — discovery (Serper + www), bez wysylki maili.
-# Task Scheduler: piatek 20:00
+# PIATEK — discovery czesc 3 (kontynuacja), bez wysylki maili.
+# Task Scheduler: piatek 17:00
 
 . "$PSScriptRoot\_common.ps1"
 Enter-GuCampaign
@@ -14,6 +14,6 @@ if ($args.Count -gt 0 -and $args[0] -like "run_config\*") {
     Write-Host "[PIATEK] Discovery (reczny run_config): $config"
     python de_gu_bauunternehmen_scraper.py --run-config $config @rest
 } else {
-    Write-Host "[PIATEK] Discovery: całe Niemcy (serper-only, bundesweit)"
-    python de_gu_bauunternehmen_scraper.py --run-config run_config\mfg_gu_de.json --serper-only-discovery --no-auto-email @args
+    Write-Host "[PIATEK] Discovery czesc 3: kontynuacja (--respect-cache)"
+    python de_gu_bauunternehmen_scraper.py --run-config run_config\mfg_gu_de.json --serper-only-discovery --no-auto-email --respect-cache @args
 }

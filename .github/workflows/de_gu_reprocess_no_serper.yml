@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       artifact_run_id:
-        description: "Run ID GU piatek discovery z danymi (np. 27439840768)"
+        description: "Run ID GU discovery z danymi (np. 27439840768)"
         required: false
         default: "27439840768"
         type: string

@@ -23,7 +23,9 @@ function Register-WeekdayTask {
 }
 
 $tasks = @(
-    @{ Name = "Kanbud_GU_Piatek_Discovery"; Script = Join-Path $ScheduleDir "run_piatek_discovery.ps1"; Day = "Friday"; Time = "20:00" }
+    @{ Name = "Kanbud_GU_Sroda_Discovery"; Script = Join-Path $ScheduleDir "run_sroda_discovery.ps1"; Day = "Wednesday"; Time = "20:00" }
+    @{ Name = "Kanbud_GU_Czwartek_Discovery"; Script = Join-Path $ScheduleDir "run_czwartek_discovery.ps1"; Day = "Thursday"; Time = "20:00" }
+    @{ Name = "Kanbud_GU_Piatek_Discovery"; Script = Join-Path $ScheduleDir "run_piatek_discovery.ps1"; Day = "Friday"; Time = "17:00" }
     @{ Name = "Kanbud_GU_Niedziela_Backfill"; Script = Join-Path $ScheduleDir "run_czwartek.ps1"; Day = "Sunday"; Time = "06:00" }
     @{ Name = "Kanbud_GU_Poniedzialek_Prep"; Script = Join-Path $ScheduleDir "run_poniedzialek_prep.ps1"; Day = "Monday"; Time = "08:00" }
     @{ Name = "Kanbud_GU_Poniedzialek_Send"; Script = Join-Path $ScheduleDir "run_poniedzialek_send.ps1"; Day = "Monday"; Time = "07:00" }
@@ -53,4 +55,4 @@ foreach ($t in $tasks) {
 }
 
 Write-Host "Gotowe. Sprawdz taskschd.msc (Kanbud_GU_*)"
-Write-Host "Plan: piatek discovery 20:00 | nd backfill | pon prep 8:00 + send 7:00 | wt send 9:00"
+Write-Host "Plan: sro-czw-pt discovery (20/20/17) | nd backfill | pon prep 8:00 + send 7:00 | wt send 9:00"

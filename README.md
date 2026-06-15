@@ -168,7 +168,9 @@ Szczegóły: [`schedule/PLAN_5_DNI.md`](schedule/PLAN_5_DNI.md)
 
 |-------|--------------|-----|----------------|
 
-| **Piątek** | 20:00 | `run_piatek_discovery.ps1` | `GU piatek discovery` |
+| **Środa** | 20:00 | `run_sroda_discovery.ps1` | `GU discovery` (część 1) |
+| **Czwartek** | 20:00 | `run_czwartek_discovery.ps1` | `GU discovery` (część 2) |
+| **Piątek** | **17:00** | `run_piatek_discovery.ps1` | `GU discovery` (część 3) |
 
 | **Niedziela** | 06:00 | `run_czwartek.ps1` | `GU niedziela backfill` |
 

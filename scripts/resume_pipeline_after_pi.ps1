@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Repo = "Bigmax1993/Wyszukiwarka-partnerow"
 
-Write-Host "Czekam na zakonczenie GU piatek discovery (run $PiRunId)..."
+Write-Host "Czekam na zakonczenie GU discovery (run $PiRunId)..."
 gh run watch $PiRunId -R $Repo --exit-status
 $watchOk = $LASTEXITCODE -eq 0
 
