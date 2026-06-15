@@ -220,7 +220,11 @@ powershell -ExecutionPolicy Bypass -File scripts\run_full_pipeline_gha.ps1 -Forc
 
 | `SERPER_API_KEY` | tak (discovery) | API Serper |
 
-| `ANTHROPIC_API_KEY` | tak (discovery + backfill) | Claude: frazy Serper + weryfikacja www |
+| `ANTHROPIC_API_KEY` | tak (discovery + backfill) | Claude API |
+
+| `CLAUDE_MODEL_FAST` | opcjonalny | Haiku — frazy Serper, cleanup Excel (domyślnie `claude-haiku-4-5`) |
+
+| `CLAUDE_MODEL_VERIFY` | opcjonalny | Sonnet — weryfikacja www, maile z HTML (domyślnie `claude-sonnet-4-6`) |
 
 | `MAIL_USER`, `MAIL_PASSWORD` | tak (pon+wt) | SMTP + IMAP |
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Claude Sonnet: czyszczenie wiersza przed eksportem do Excela."""
+"""Claude Haiku: czyszczenie wiersza przed eksportem do Excela."""
 from __future__ import annotations
 
 import json
@@ -47,6 +47,7 @@ def claude_cleanup_row_fields(
             api_key,
             cache=cache,
             bypass_daily_limit=True,
+            model_tier="fast",
             on_step=on_step,
         )
         logger.info("Claude row cleanup, model=%s", model)

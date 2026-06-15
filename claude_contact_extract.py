@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Claude Sonnet: Kontakte aus Website-Crawl, wenn Regex nichts findet."""
+"""Claude Sonnet: kontakty z Website-Crawl, gdy Regex nichts findet."""
 from __future__ import annotations
 
 from typing import Callable
@@ -67,6 +67,7 @@ def claude_extract_contacts_from_pages(
             logger,
             api_key,
             cache=cache,
+            model_tier="verify",
             on_step=on_step,
         )
         if logger:

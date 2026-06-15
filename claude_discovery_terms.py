@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Claude: generowanie fraz Serper (uzupełnienie) gdy szablony dały za mało wyników."""
+"""Claude Haiku: generowanie fraz Serper (uzupełnienie) gdy szablony dały za mało wyników."""
 from __future__ import annotations
 
 import re
@@ -157,7 +157,7 @@ def generate_claude_discovery_terms(
     )
     try:
         logger.info("Claude discovery: generowanie %s fraz", terms_requested)
-        text, model = claude_generate_text(prompt, logger, api_key, cache=cache)
+        text, model = claude_generate_text(prompt, logger, api_key, cache=cache, model_tier="fast")
         logger.info("Claude discovery terms, model=%s", model)
     except Exception as exc:
         logger.warning("Claude discovery terms: %s", exc)

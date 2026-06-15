@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Klient Anthropic Messages API (Claude Sonnet) — weryfikacja www i cleanup wierszy."""
+"""Klient Anthropic Messages API — modele hybrydowe (Haiku / Sonnet)."""
 from __future__ import annotations
 
 import logging
 import time
 from datetime import date, datetime
-from typing import Callable
+from typing import Callable, Literal
 
 import requests
 
@@ -14,7 +14,11 @@ from scraper_env import get_anthropic_api_key, get_env_value
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 # claude-sonnet-4-20250514 wycofany ~15.06.2026 → 404 na API
-DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6"
+DEFAULT_CLAUDE_MODEL_VERIFY = "claude-sonnet-4-6"
+DEFAULT_CLAUDE_MODEL_FAST = "claude-haiku-4-5"
+# Kompatybilność wsteczna (CLAUDE_MODEL = tier verify)
+DEFAULT_CLAUDE_MODEL = DEFAULT_CLAUDE_MODEL_VERIFY
+CLAUDE_MODEL_TIER = Literal["fast", "verify"]
 CLAUDE_REQUEST_TIMEOUT = 120
 CLAUDE_MIN_INTERVAL_SECONDS = 1.2
 CLAUDE_API_RETRY_ATTEMPTS = 3
@@ -55,8 +59,30 @@ if _truthy_env(get_env_value("CLAUDE_UNLIMITED", "")) or _truthy_env(
     CLAUDE_UNLIMITED = True
 
 
+def get_claude_model_verify() -> str:
+    legacy = get_env_value("CLAUDE_MODEL", "")
+    explicit = get_env_value("CLAUDE_MODEL_VERIFY", "")
+    return explicit or legacy or DEFAULT_CLAUDE_MODEL_VERIFY
+
+
+def get_claude_model_fast() -> str:
+    return get_env_value("CLAUDE_MODEL_FAST", DEFAULT_CLAUDE_MODEL_FAST) or DEFAULT_CLAUDE_MODEL_FAST
+
+
 def get_claude_model() -> str:
-    return get_env_value("CLAUDE_MODEL", DEFAULT_CLAUDE_MODEL) or DEFAULT_CLAUDE_MODEL
+    return get_claude_model_verify()
+
+
+def resolve_claude_model(
+    *,
+    model: str | None = None,
+    model_tier: CLAUDE_MODEL_TIER | None = None,
+) -> str:
+    if model:
+        return model.strip()
+    if model_tier == "fast":
+        return get_claude_model_fast()
+    return get_claude_model_verify()
 
 
 def _campaign_today() -> str:
@@ -139,9 +165,11 @@ def claude_generate_text(
     *,
     max_tokens: int = 4096,
     bypass_daily_limit: bool = False,
+    model: str | None = None,
+    model_tier: CLAUDE_MODEL_TIER | None = None,
     on_step: Callable[[str], None] | None = None,
 ) -> tuple[str, str]:
-    """Zwraca (text, model). bypass_daily_limit=True wymusza brak limitu gdy unlimited=False."""
+    """Zwraca (text, model). model_tier: fast=Haiku, verify=Sonnet (domyslnie)."""
     key = (api_key or get_anthropic_api_key()).strip()
     if not key:
         raise RuntimeError("Brak ANTHROPIC_API_KEY")
@@ -156,7 +184,7 @@ def claude_generate_text(
             f"max={CLAUDE_DAILY_LIMIT})"
         )
 
-    model = get_claude_model()
+    model = resolve_claude_model(model=model, model_tier=model_tier)
     headers = {
         "x-api-key": key,
         "anthropic-version": ANTHROPIC_VERSION,

@@ -74,21 +74,14 @@ Wysyłka w oknie **8–18** czasu berlińskiego (bez `DISABLE_SEND_WINDOW` w wor
 
 | `SERPER_API_KEY` | discovery | API Serper |
 
-| `ANTHROPIC_API_KEY` | discovery + backfill | Claude: frazy Serper (śr–pt) + weryfikacja www (niedziela) |
+| `ANTHROPIC_API_KEY` | discovery + backfill | Claude API |
 
-| `MAIL_USER` | pon+wt send | Login SMTP |
+Modele Claude (domyślnie w kodzie, opcjonalnie env):
 
-| `MAIL_PASSWORD` | pon+wt send | Hasło SMTP / IMAP |
-
-| `GDRIVE_OAUTH_CLIENT_ID` | zalecany | OAuth Desktop — upload na „Mój dysk” |
-
-| `GDRIVE_OAUTH_CLIENT_SECRET` | zalecany | OAuth Desktop |
-
-| `GDRIVE_OAUTH_REFRESH_TOKEN` | zalecany | OAuth Desktop |
-
-| `GDRIVE_SERVICE_ACCOUNT_JSON` | opcjonalny | Konto usługi (Shared Drive) |
-
-
+| Zadanie | Tier | Domyślny model | Env |
+|---------|------|----------------|-----|
+| Frazy Serper, cleanup Excel | `fast` | `claude-haiku-4-5` | `CLAUDE_MODEL_FAST` |
+| Weryfikacja www, wyciąganie maili | `verify` | `claude-sonnet-4-6` | `CLAUDE_MODEL_VERIFY` (lub legacy `CLAUDE_MODEL`) |
 
 Setup OAuth: `python scripts/gdrive_oauth_setup.py` — szczegóły w [`GOOGLE_DRIVE.md`](GOOGLE_DRIVE.md).
 

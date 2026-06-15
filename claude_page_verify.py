@@ -65,7 +65,7 @@ def claude_verify_company_page(
     )
     try:
         text, model = claude_generate_text(
-            prompt, logger, api_key, cache=cache, on_step=on_step
+            prompt, logger, api_key, cache=cache, model_tier="verify", on_step=on_step
         )
         logger.info("Claude page verify, model=%s", model)
         parsed = parse_page_verify_response(text)
