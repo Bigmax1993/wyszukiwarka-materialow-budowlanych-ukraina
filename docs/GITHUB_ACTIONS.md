@@ -18,7 +18,7 @@ Repozytorium: [Wyszukiwarka-partnerow](https://github.com/Bigmax1993/Wyszukiwark
 
 | **CI Deploy** | `ci-deploy.yml` | push | smoke + walidacja secretów + dry-run maili |
 
-| **GU discovery** | `de_gu_pi.yml` | cron, ręcznie | Discovery śr–pt (max 12 h/run) → `de-gu-wyniki-pi` |
+| **GU discovery** | `de_gu_pi.yml` | cron, ręcznie | Discovery pon–pt (max 12 h/run) → `de-gu-wyniki-pi` |
 
 | **GU niedziela backfill** | `de_gu_thu.yml` | cron, ręcznie | Backfill + Excel → `de-gu-wyniki-thu` |
 
@@ -40,9 +40,11 @@ Repozytorium: [Wyszukiwarka-partnerow](https://github.com/Bigmax1993/Wyszukiwark
 
 |-------|----------|----------|-----------|
 
-| **Środa** | discovery część 1 | `0 20 * * 3` (Europe/Warsaw) | **20:00** |
-| **Czwartek** | discovery część 2 | `0 20 * * 4` (Europe/Warsaw) | **20:00** |
-| **Piątek** | discovery część 3 | `0 17 * * 5` (Europe/Warsaw) | **17:00** |
+| **Poniedziałek** | discovery część 1 | `0 17 * * 1` (Europe/Warsaw) | **17:00** |
+| **Wtorek** | discovery część 2 | `0 15 * * 2` (Europe/Warsaw) | **15:00** |
+| **Środa** | discovery część 3 | `0 19 * * 3` (Europe/Warsaw) | **19:00** |
+| **Czwartek** | discovery część 4 | `0 20 * * 4` (Europe/Warsaw) | **20:00** |
+| **Piątek** | discovery część 5 | `0 16 * * 5` (Europe/Warsaw) | **16:00** |
 
 | **Niedziela** | backfill | `30 3 * * 0` | **05:30** |
 
@@ -93,13 +95,13 @@ Setup OAuth: `python scripts/gdrive_oauth_setup.py` — szczegóły w [`GOOGLE_D
 
 ```
 
-sro→pi | czw→pi | pt→pi → niedziela → thu → sync Drive → pon prep → mon → pon send → tue → wt send → fri
+pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela → thu → sync Drive → pon prep → mon → pon send → tue → wt send → fri
 
 ```
 
 
 
-Środa discovery: `de-gu-wyniki-fri` → `de-gu-wyniki-pi`. Czwartek i piątek: kontynuacja z `pi` (`--respect-cache`). Niedziela backfill: najnowszy `de-gu-wyniki-pi`.
+Poniedziałek discovery: `de-gu-wyniki-fri` → `de-gu-wyniki-pi`. Wtorek–piątek: kontynuacja z `pi` (`--respect-cache`). Niedziela backfill: najnowszy `de-gu-wyniki-pi`.
 
 **Sync Drive** (pon 06:00 PL) pobiera **`de-gu-wyniki-thu`** z niedzielnego backfillu — kolejność: `thu` → `mon` → `tue` → `fri`. Nie używa `fri`/`tue` z poprzedniej wysyłki, dopóki istnieje `thu`.
 
@@ -145,6 +147,8 @@ Pojedyncze kroki (`gh`):
 ```powershell
 
 gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=mon
+gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=tue
 gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=wed
 gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=thu
 gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=fri

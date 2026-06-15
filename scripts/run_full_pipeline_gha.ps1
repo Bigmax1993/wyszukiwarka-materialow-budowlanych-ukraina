@@ -18,7 +18,7 @@ Opcje:
 
   -ForceResend     ponowna wysylka (--force-resend na obu partiach)
 
-  -FullDiscovery   uruchom 3 etapy discovery (wed, thu, fri) po kolei
+  -FullDiscovery   uruchom 5 etapow discovery (mon, tue, wed, thu, fri) po kolei
 
   -StrictDiscovery przy timeout/failure discovery przerwij (domyslnie: kontynuuj gdy jest artefakt pi)
 
@@ -241,7 +241,7 @@ if ($DiscoveryRunId) {
 
     } elseif ($FullDiscovery) {
 
-        foreach ($phase in @("wed", "thu", "fri")) {
+        foreach ($phase in @("mon", "tue", "wed", "thu", "fri")) {
 
             Invoke-GhaWorkflow $DiscoveryWorkflow @{ discovery_phase = $phase } -ContinueOnDiscoveryArtifact
 
