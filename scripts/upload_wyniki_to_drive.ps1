@@ -25,9 +25,9 @@ Write-Host "=== Szukam artefaktu GU (thu -> mon -> tue -> fri) ===" -ForegroundC
 $artifactName = $null
 $runId = $null
 foreach ($name in $ArtifactOrder) {
-    $runId = gh api "repos/$Repo/actions/artifacts" --paginate `
-        --jq ".artifacts[] | select(.name==`"$name`" and .expired==false) | .workflow_run.id" `
-        2>$null | Select-Object -First 1
+    $runId = gh api "repos/$Repo/actions/artifacts?per_page=100" `
+        --jq "[.artifacts[] | select(.name==`"$name`" and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty" `
+        2>$null
     if ($runId) {
         $artifactName = $name
         break

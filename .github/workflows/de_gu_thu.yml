@@ -25,7 +25,7 @@ on:
 
 permissions:
 
-  actions: read
+  actions: write
 
   contents: read
 
@@ -99,9 +99,9 @@ jobs:
 
           else
 
-            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
+            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
 
-              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-pi" and .expired==false) | .workflow_run.id' | head -1)
+              --jq '[.artifacts[] | select(.name=="de-gu-wyniki-pi" and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty')
 
             ARTIFACT="de-gu-wyniki-pi"
 
@@ -168,4 +168,10 @@ jobs:
             Wyniki/
 
             wyslane/
+
+      - name: Chain — sync Google Drive
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/gha_chain_workflow.sh "Sync wyniki Google Drive"
 

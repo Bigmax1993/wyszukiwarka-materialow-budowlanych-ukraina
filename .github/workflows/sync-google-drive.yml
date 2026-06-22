@@ -4,7 +4,7 @@ name: Sync wyniki Google Drive
 # - Harmonogram: poniedziałek 06:00 Europe/Warsaw (cron + timezone).
 # - Źródło danych: pierwszy dostępny artefakt thu → mon → tue → fri
 #   (Excel po niedzielnym backfillu; NIE fri/tue z poprzedniej wysyłki).
-# - Tylko workflow_dispatch + schedule (bez auto-triggera po wysyłce).
+# - Po backfillu: auto-chain do prep (cron pon 06:00 jako zapas).
 # - Excel (.xlsx): kopia z datą + nadpisanie de_gu_bauunternehmen_kontakte.xlsx (aktualny).
 
 on:
@@ -19,7 +19,7 @@ on:
       timezone: Europe/Warsaw
 
 permissions:
-  actions: read
+  actions: write
   contents: read
 
 env:
@@ -116,3 +116,9 @@ jobs:
         run: |
           mkdir -p Wyniki wyslane 2>/dev/null || true
           python scripts/gdrive_upload_wyniki.py --campaign-dir .
+
+      - name: Chain — poniedzialek prep
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/gha_chain_workflow.sh "GU poniedzialek prep"

@@ -21,7 +21,7 @@ on:
         default: false
 
 permissions:
-  actions: read
+  actions: write
   contents: read
 
 env:
@@ -62,8 +62,8 @@ jobs:
           if [ -n "$FORCED" ]; then
             RUN_ID="$FORCED"
           else
-            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
-              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-mon" and .expired==false) | .workflow_run.id' | head -1)
+            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.name=="de-gu-wyniki-mon" and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty')
           fi
           if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
             echo "::error::Brak artefaktu (uruchom prep lub podaj artifact_run_id)"
@@ -109,3 +109,9 @@ jobs:
           path: |
             Wyniki/
             wyslane/
+
+      - name: Chain — wtorek send
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/gha_chain_workflow.sh "GU wtorek send"

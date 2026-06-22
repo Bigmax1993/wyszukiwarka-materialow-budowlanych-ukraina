@@ -32,7 +32,7 @@ on:
         type: string
 
 permissions:
-  actions: read
+  actions: write
   contents: read
 
 env:
@@ -40,12 +40,13 @@ env:
   DISABLE_SEND_WINDOW: "1"
   SERPER_DAILY_LIMIT: "1000"
   CLAUDE_UNLIMITED: "1"
+  SCRAPER_MAX_RUNTIME_SECONDS: "14400"
   KANBUD_PROJECT_ROOT: ${{ github.workspace }}/libs
 
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 720
+    timeout-minutes: 270
     env:
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -95,8 +96,8 @@ jobs:
           echo "Faza discovery: $PHASE"
 
           if [ "$PHASE" = "mon" ]; then
-            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
-              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-fri" and .expired==false) | .workflow_run.id' | head -1)
+            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.name=="de-gu-wyniki-fri" and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty')
             if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
               echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
               echo "artifact-name=de-gu-wyniki-fri" >> "$GITHUB_OUTPUT"
@@ -106,8 +107,8 @@ jobs:
               echo "Poniedzialek: brak fri — pierwszy cykl (pusty start)"
             fi
           else
-            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts" \
-              --paginate --jq '.artifacts[] | select(.name=="de-gu-wyniki-pi" and .expired==false) | .workflow_run.id' | head -1)
+            RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.name=="de-gu-wyniki-pi" and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty')
             if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
               echo "::error::Brak de-gu-wyniki-pi — uruchom najpierw poniedzialek discovery (faza mon)"
               exit 1
@@ -146,3 +147,11 @@ jobs:
           path: |
             Wyniki/
             wyslane/
+
+      - name: Chain — niedziela backfill (piatek, koniec discovery)
+        if: success() && steps.prev_run.outputs.phase == 'fri'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash scripts/gha_chain_workflow.sh "GU niedziela backfill" \
+            "artifact_run_id=${{ github.run_id }}"

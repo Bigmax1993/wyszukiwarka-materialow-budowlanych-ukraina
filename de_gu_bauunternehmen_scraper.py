@@ -167,6 +167,12 @@ from scraper_env import (
     get_env_value,
     get_serper_api_key,
 )
+from scraper_runtime_limit import (
+    SCRAPER_MAX_RUNTIME_SECONDS,
+    is_scraper_runtime_limit_reached,
+    request_stop_on_runtime_limit,
+    start_scraper_runtime_clock,
+)
 from scraper_email_replies import (
     ReplySyncConfig,
     mark_email_sent,
@@ -3311,6 +3317,9 @@ def _run_claude_discovery_supplement(
     used_terms: list[str] = []
 
     for round_n in range(1, CLAUDE_DISCOVERY_MAX_ROUNDS + 1):
+        if request_stop_on_runtime_limit(logger, console_step_fn=console_step):
+            stop_requested = True
+            break
         if stop_requested:
             break
         if not _needs_claude_discovery_supplement(
@@ -5738,6 +5747,9 @@ def _process_serper_terms(
     by_domain = index_all_rows_by_domain(all_rows)
     contacts_cache = cache.setdefault("contacts", {})
     for term in terms:
+        if request_stop_on_runtime_limit(logger, console_step_fn=console_step):
+            stop_requested = True
+            break
         if stop_requested or is_serper_api_exhausted(cache):
             stop_requested = True
             break
@@ -5973,6 +5985,12 @@ def run_scraper(
         print(f"[ROTACJA] {format_rotation_status(OUTPUT_DIR)}")
 
     logger.info("=== START DE GU bundesweit – GU Einzelhandelsbau bundesweit (Serper API) ===")
+    start_scraper_runtime_clock()
+    if SCRAPER_MAX_RUNTIME_SECONDS > 0:
+        console_step(
+            f"Twardy limit czasu: {SCRAPER_MAX_RUNTIME_SECONDS}s "
+            f"({SCRAPER_MAX_RUNTIME_SECONDS // 3600}h)"
+        )
     print(
         "[START] Scraper Deutschland GU Filialbau – GU Neubau/Umbau Lebensmittelmärkte (Serper API)."
     )
@@ -6196,6 +6214,11 @@ def run_scraper(
                             f"Serper API wyczerpane — kontynuuj z {pending_land} pending "
                             f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
                         )
+                    elif is_scraper_runtime_limit_reached():
+                        console_step(
+                            f"Limit czasu — kontynuuj z {pending_land} pending "
+                            f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
+                        )
                     else:
                         raise RuntimeError(
                             f"Za mało kandydatów pending ({pending_land} < "
@@ -6213,6 +6236,11 @@ def run_scraper(
                     if is_serper_api_exhausted(cache):
                         console_step(
                             f"Serper API wyczerpane — kontynuuj z {pending_all} pending "
+                            f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
+                        )
+                    elif is_scraper_runtime_limit_reached():
+                        console_step(
+                            f"Limit czasu — kontynuuj z {pending_all} pending "
                             f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
                         )
                     else:
