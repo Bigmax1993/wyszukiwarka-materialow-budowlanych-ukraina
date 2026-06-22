@@ -16,9 +16,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LIBS = ROOT / "libs"
-for _p in (ROOT, LIBS):
+SCRIPTS = ROOT / "scripts"
+for _p in (ROOT, LIBS, SCRIPTS):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
+
+from recover_pi_cache_contacts import recover_contacts_from_cache_file  # noqa: E402
 
 from libs.scraper_email_replies import ReplySyncConfig, write_excel_with_reply_styles  # noqa: E402
 
@@ -141,20 +144,26 @@ def merge_contacts_from_run_ids(
                 continue
             try:
                 cache = _load_cache_file(cache_path)
+                contacts = cache.get("contacts") or {}
             except json.JSONDecodeError as exc:
-                msg = f"run {run_id}: uszkodzony JSON ({exc})"
                 if skip_corrupt:
-                    logging.warning("Pomijam %s", msg)
-                    continue
-                raise
-            contacts = cache.get("contacts") or {}
+                    logging.warning(
+                        "run %s: uszkodzony JSON (%s) — probuje odzysku contacts",
+                        run_id,
+                        exc,
+                    )
+                    contacts = recover_contacts_from_cache_file(cache_path)
+                else:
+                    raise
             if not isinstance(contacts, dict):
                 continue
             for url, info in contacts.items():
                 if isinstance(info, dict):
                     merged[url] = info
             loaded.append(run_id)
-            logging.info("run %s: +%s kontaktow (lacznie %s)", run_id, len(contacts), len(merged))
+            logging.info(
+                "run %s: +%s kontaktow (lacznie %s)", run_id, len(contacts), len(merged)
+            )
     return merged, loaded
 
 

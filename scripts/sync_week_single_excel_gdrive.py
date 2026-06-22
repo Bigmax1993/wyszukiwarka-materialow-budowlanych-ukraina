@@ -23,6 +23,7 @@ for _p in (ROOT, SCRIPTS):
 from campaign_data_paths import GOOGLE_DRIVE_GU_FOLDER_ID  # noqa: E402
 import export_week_discovery_all_to_excel as week_export  # noqa: E402
 import gdrive_upload_wyniki as gdrive  # noqa: E402
+from recover_pi_cache_contacts import recover_contacts_from_cache_file  # noqa: E402
 
 _KONTAKTE_PREFIX = "de_gu_bauunternehmen_kontakte"
 

@@ -6,7 +6,7 @@ on:
       pi_run_ids:
         description: "Run ID de-gu-wyniki-pi (po przecinku). Domyslnie tydzien 15-21.06.2026 (bez srody - uszkodzony artefakt)."
         required: false
-        default: "27533750486,27638016924,27787280147,27837533068"
+        default: "27533750486,27638016924,27713619204,27787280147,27837533068"
       week_label:
         description: "Etykieta w Excelu / logu"
         required: false
