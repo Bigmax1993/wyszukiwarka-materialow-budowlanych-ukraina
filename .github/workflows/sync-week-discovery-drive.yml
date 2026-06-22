@@ -18,7 +18,7 @@ permissions:
 
 env:
   GDRIVE_FOLDER_ID: "1tP8oUi72t4EHDbE9GnHFdvfNtNsJe4xf"
-  GDRIVE_VERSION_XLSX: "1"
+  GDRIVE_VERSION_XLSX: "0"
   SCRAPER_TIMEZONE: Europe/Warsaw
   KANBUD_PROJECT_ROOT: ${{ github.workspace }}/libs
 
@@ -34,30 +34,25 @@ jobs:
 
       - run: pip install -r requirements.txt -r requirements-drive.txt
 
-      - name: Scal pi z tygodnia i zapisz wszystkie firmy do Excela
+      - name: Jeden Excel tygodnia na Drive (usun stare kopie)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p Wyniki wyslane
-          python scripts/export_week_discovery_all_to_excel.py \
-            --run-ids "${{ github.event.inputs.pi_run_ids }}" \
-            --repo "${{ github.repository }}" \
-            --label "${{ github.event.inputs.week_label }}"
-
-      - name: Upload Wyniki artifact (tydzien)
-        uses: actions/upload-artifact@v4
-        with:
-          name: de-gu-wyniki-week-export
-          path: |
-            Wyniki/
-            wyslane/
-
-      - name: Upload Wyniki to Google Drive
-        env:
           GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
           GDRIVE_OAUTH_CLIENT_ID: ${{ secrets.GDRIVE_OAUTH_CLIENT_ID }}
           GDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.GDRIVE_OAUTH_CLIENT_SECRET }}
           GDRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GDRIVE_OAUTH_REFRESH_TOKEN }}
           GDRIVE_IMPERSONATE_EMAIL: ${{ secrets.GDRIVE_IMPERSONATE_EMAIL }}
           GDRIVE_SHARED_DRIVE_ID: ${{ secrets.GDRIVE_SHARED_DRIVE_ID }}
-        run: python scripts/gdrive_upload_wyniki.py --campaign-dir .
+          GDRIVE_VERSION_XLSX: "0"
+        run: |
+          mkdir -p Wyniki wyslane
+          python scripts/sync_week_single_excel_gdrive.py \
+            --run-ids "${{ github.event.inputs.pi_run_ids }}" \
+            --week-label "${{ github.event.inputs.week_label }}"
+
+      - name: Upload Wyniki artifact (tydzien, jeden Excel)
+        uses: actions/upload-artifact@v4
+        with:
+          name: de-gu-wyniki-week-export
+          path: |
+            Wyniki/de_gu_bauunternehmen_kontakte_*.xlsx

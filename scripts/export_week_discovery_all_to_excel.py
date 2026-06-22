@@ -187,18 +187,19 @@ def export_merged_contacts(
     return rows, cache
 
 
-def write_excel(rows: list[dict], cache: dict, logger: logging.Logger) -> None:
+def write_excel(rows: list[dict], cache: dict, logger: logging.Logger, output: Path | None = None) -> Path:
     export_rows = [_pipeline_row_to_export(r) for r in rows]
     state_rows = scraper.build_bundesland_rows(rows)
-    scraper.OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    out = output or scraper.OUTPUT_FILE
+    out.parent.mkdir(parents=True, exist_ok=True)
     cfg = ReplySyncConfig(
         cache_path=scraper.CACHE_FILE,
-        xlsx_path=scraper.OUTPUT_FILE,
+        xlsx_path=out,
         lang="de",
         campaign_id="de_gu_bauunternehmen",
     )
     write_excel_with_reply_styles(
-        scraper.OUTPUT_FILE,
+        out,
         {
             "Info": scraper.build_excel_info_sheet_rows(),
             "Kontakte": export_rows,
@@ -209,6 +210,7 @@ def write_excel(rows: list[dict], cache: dict, logger: logging.Logger) -> None:
         logger,
     )
     scraper.save_cache(cache, logger)
+    return out
 
 
 def main() -> int:
@@ -230,6 +232,12 @@ def main() -> int:
         default="",
         help="Etykieta tygodnia (np. 2026-06-15_2026-06-21)",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Sciezka docelowego Excela (domyslnie Wyniki/de_gu_bauunternehmen_kontakte.xlsx)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -240,11 +248,11 @@ def main() -> int:
     if not loaded:
         raise SystemExit("Nie udalo sie pobrac zadnego artefaktu pi.")
     rows, cache = export_merged_contacts(contacts, label=args.label)
-    write_excel(rows, cache, logger)
+    out = write_excel(rows, cache, logger, output=args.output)
 
     with_email = sum(1 for r in rows if (r.get("email_target") or "").strip())
     print(
-        f"Zapisano {len(rows)} firm ({with_email} z e-mailem) -> {scraper.OUTPUT_FILE}\n"
+        f"Zapisano {len(rows)} firm ({with_email} z e-mailem) -> {out}\n"
         f"Zrodlo: run IDs {', '.join(loaded)}"
     )
     return 0
