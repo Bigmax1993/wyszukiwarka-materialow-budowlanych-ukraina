@@ -35,6 +35,10 @@ permissions:
   actions: write
   contents: read
 
+concurrency:
+  group: gu-pipeline
+  cancel-in-progress: false
+
 env:
   SCRAPER_TIMEZONE: Europe/Warsaw
   DISABLE_SEND_WINDOW: "1"
@@ -46,20 +50,15 @@ env:
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 270
+    # setup ~15 min + scraper do 4h + upload — 270 min ubijało job w trakcie (marnowanie minut)
+    timeout-minutes: 310
     env:
       SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - run: |
-          pip install -r requirements.txt
-          python -m playwright install chromium --with-deps
+      - uses: ./.github/actions/setup-scraper
 
       - name: Resolve artifact run (poniedzialek–piatek)
         id: prev_run
@@ -155,3 +154,14 @@ jobs:
         run: |
           bash scripts/gha_chain_workflow.sh "GU niedziela backfill" \
             "artifact_run_id=${{ github.run_id }}"
+
+      - name: Wznow po timeout (artefakt z tego runu)
+        if: cancelled() && steps.prev_run.outputs.phase != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PHASE="${{ steps.prev_run.outputs.phase }}"
+          echo "::warning::Discovery przerwane (timeout) — wznawiam fazę $PHASE z run ${{ github.run_id }}"
+          gh workflow run de_gu_pi.yml -R "$GITHUB_REPOSITORY" \
+            -f discovery_phase="$PHASE" \
+            -f resume_artifact_run_id="${{ github.run_id }}"

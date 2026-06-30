@@ -15,6 +15,10 @@ permissions:
   actions: read
   contents: read
 
+concurrency:
+  group: gu-pipeline
+  cancel-in-progress: false
+
 env:
   SCRAPER_TIMEZONE: Europe/Berlin
   DISABLE_SEND_WINDOW: "1"
@@ -31,17 +35,11 @@ env:
 jobs:
   send:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - run: |
-          pip install -r requirements.txt
-          python -m playwright install chromium --with-deps
+      - uses: ./.github/actions/setup-scraper
 
       - name: Resolve artifact run (poniedzialek send)
         id: artifact_run
