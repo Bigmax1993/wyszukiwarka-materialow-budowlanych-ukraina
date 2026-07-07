@@ -165,4 +165,44 @@ Po piątkowym discovery (ręcznie):
 powershell -ExecutionPolicy Bypass -File scripts\resume_pipeline_after_pi.ps1 -PiRunId RUN_ID
 ```
 
+---
+
+## Kampania UA (materiały budowlane)
+
+Identyczny harmonogram jak GU — szczegóły: [`schedule/ua/PLAN_5_DNI_UA.md`](../schedule/ua/PLAN_5_DNI_UA.md).
+
+| Workflow | Plik | Trigger | Co robi |
+|----------|------|---------|---------|
+| **UA discovery** | `ua_materialy_pi.yml` | cron, ręcznie | Discovery pon–pt → `ua-materialy-wyniki-pi` |
+| **UA niedziela backfill** | `ua_materialy_thu.yml` | cron, ręcznie | Backfill + Excel → `ua-materialy-wyniki-thu` |
+| **UA poniedzialek prep** | `ua_materialy_mon.yml` | cron, ręcznie | Rebuild Excel → `ua-materialy-wyniki-mon` |
+| **UA poniedzialek send** | `ua_materialy_tue.yml` | cron, ręcznie | Wysyłka partia 1 (do 300) → `ua-materialy-wyniki-tue` |
+| **UA wtorek send** | `ua_materialy_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `ua-materialy-wyniki-fri` |
+| **Sync wyniki Google Drive UA** | `sync-google-drive-ua.yml` | cron pon 06:00 PL, ręcznie | Upload `Wyniki/` na folder UA (`GDRIVE_FOLDER_ID_UA`) |
+
+Cron (Europe/Warsaw): **identyczny jak GU** — pon 17:00 … pt 16:00 discovery; nd 05:30 backfill; pon 06:00 sync; pon 07:00 prep; pon 09:00 + wt 09:00 send.
+
+Artefakty:
+
+```
+pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela→thu → sync Drive UA → pon prep→mon → pon send→tue → wt send→fri
+```
+
+**UA send:** bez załącznika PPTX; `MAIL_SENDER_NAME` → Свінчак Максим; telefon `+380977091141`.
+
+Dodatkowy secret: `GDRIVE_FOLDER_ID_UA` (osobny folder Drive dla wyników UA).
+
+Ręczne uruchomienie:
+
+```powershell
+gh workflow run "UA discovery" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "UA discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=mon
+gh workflow run "UA niedziela backfill" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "Sync wyniki Google Drive UA" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "UA poniedzialek prep" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "UA poniedzialek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
+gh workflow run "UA wtorek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
+```
+
+Concurrency: `ua-pipeline` (osobna grupa od `gu-pipeline` — obie kampanie mogą działać równolegle).
 

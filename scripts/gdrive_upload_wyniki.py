@@ -391,6 +391,12 @@ def main() -> int:
         help="Katalog kampanii (do resolve_data_root)",
     )
     parser.add_argument(
+        "--campaign",
+        choices=("gu", "ua"),
+        default="gu",
+        help="Kampania: gu | ua (folder Drive / resolve_data_root)",
+    )
+    parser.add_argument(
         "--folder-id",
         default=os.environ.get("GDRIVE_FOLDER_ID", GOOGLE_DRIVE_GU_FOLDER_ID),
     )
@@ -398,7 +404,7 @@ def main() -> int:
 
     creds, use_oauth = _load_credentials()
     service, MediaFileUpload = _drive_service(creds)
-    data_root = resolve_data_root(args.campaign_dir)
+    data_root = resolve_data_root(args.campaign_dir, campaign=args.campaign)
     upload_folder_id = _resolve_upload_folder(service, args.folder_id, use_oauth=use_oauth)
 
     total = 0

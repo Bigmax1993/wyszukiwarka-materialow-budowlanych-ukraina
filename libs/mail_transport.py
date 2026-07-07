@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Wspólna warstwa poczty: SMTP/IMAP (home.pl lub Gmail) z zmiennych środowiskowych.
+Wspólna warstwa poczty: yagmail (Gmail / SMTP) + archiwum IMAP i lokalne .eml.
 """
 from __future__ import annotations
 
@@ -439,6 +439,10 @@ def _yagmail_smtp() -> Any:
     if not (username and password):
         raise ValueError("brak MAIL_USER / MAIL_PASSWORD (lub GMAIL_*)")
 
+    # Gmail: yagmail sam wybiera smtp.gmail.com + TLS (hasło aplikacji w Google).
+    if _is_gmail_address(username):
+        return yagmail.SMTP(user=username, password=password)
+
     host = get_smtp_host()
     if not host:
         return yagmail.SMTP(user=username, password=password)
@@ -463,8 +467,11 @@ def send_smtp_email(
     *,
     mail_type: str = "wiadomość",
     campaign: str = "",
+    attachment_paths: list[str] | None = None,
+    cc: list[str] | None = None,
+    bcc: list[str] | None = None,
 ) -> tuple[bool, str]:
-    """Wysyłka SMTP (home.pl lub Gmail). Zwraca (ok, info)."""
+    """Wysyłka przez yagmail (Gmail lub SMTP z .env). Zwraca (ok, info)."""
     try:
         import yagmail  # pyright: ignore[reportMissingImports]  # noqa: F401
     except ImportError:
@@ -477,8 +484,13 @@ def send_smtp_email(
 
     subject_clean = sanitize_special_text(subject)
     body_clean = sanitize_email_body(body)
-    bcc = _split_recipients(get_env_value(ENV_MAIL_BCC))
-    cc = merge_mail_cc_recipients(to_email, get_env_value(ENV_MAIL_CC))
+    bcc_list = list(bcc) if bcc is not None else _split_recipients(get_env_value(ENV_MAIL_BCC))
+    cc_list = (
+        list(cc)
+        if cc is not None
+        else merge_mail_cc_recipients(to_email, get_env_value(ENV_MAIL_CC))
+    )
+    attach_files = [p for p in (attachment_paths or []) if p and Path(p).is_file()]
 
     try:
         yag = _yagmail_smtp()
@@ -487,22 +499,30 @@ def send_smtp_email(
             "subject": subject_clean,
             "contents": [body_clean],
         }
-        if bcc:
-            kwargs["bcc"] = bcc
-        if cc:
-            kwargs["cc"] = cc
+        if bcc_list:
+            kwargs["bcc"] = bcc_list
+        if cc_list:
+            kwargs["cc"] = cc_list
+        if attach_files:
+            kwargs["attachments"] = attach_files
         yag.send(**kwargs)
         archive_sent_message(
             to_email,
             subject_clean,
             body_clean,
             logger,
-            cc=cc,
-            bcc=bcc,
+            cc=cc_list,
+            bcc=bcc_list,
+            attachment_paths=attach_files or None,
         )
-        host = get_smtp_host() or _DEFAULT_HOMEPL_SMTP
+        provider = mail_provider_label() or get_smtp_host() or "yagmail"
         logger.info(
-            f"Wysłano {mail_type} → {to_email} via {host} | temat: {(subject or '')[:60]}"
+            "Wysłano %s → %s via %s (yagmail) | temat: %s%s",
+            mail_type,
+            to_email,
+            provider,
+            (subject or "")[:60],
+            f" | załączniki: {len(attach_files)}" if attach_files else "",
         )
         try:
             from email_journal import log_mail_sent
@@ -518,7 +538,7 @@ def send_smtp_email(
             pass
         return True, "gesendet"
     except Exception as e:
-        logger.warning(f"Błąd wysyłki do {to_email}: {e}")
+        logger.warning("Błąd wysyłki (yagmail) do %s: %s", to_email, e)
         try:
             from email_journal import log_mail_sent
 

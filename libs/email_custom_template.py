@@ -15,6 +15,10 @@ from claude_prompts import (
     build_custom_email_prompt_de,
     build_custom_email_prompt_pl,
 )
+try:
+    from ua_claude_prompts import build_custom_email_prompt_uk
+except ImportError:
+    build_custom_email_prompt_uk = None  # type: ignore[misc, assignment]
 from scraper_env import get_anthropic_api_key
 
 
@@ -29,6 +33,13 @@ def build_custom_draft_prompt(
     draft = (draft or "").strip()
     if lang == "de":
         return build_custom_email_prompt_de(
+            draft,
+            company_name,
+            city_name=city_name,
+            delivery_address=delivery_address,
+        )
+    if lang == "uk" and build_custom_email_prompt_uk is not None:
+        return build_custom_email_prompt_uk(
             draft,
             company_name,
             city_name=city_name,
@@ -86,11 +97,12 @@ def beautify_custom_email_draft(
     if not draft:
         raise ValueError("Pusta treść szablonu")
     if not fallback_subject:
-        fallback_subject = (
-            f"Preisanfrage – {company_name}"
-            if lang == "de"
-            else f"Zapytanie ofertowe – {company_name}"
-        )
+        if lang == "de":
+            fallback_subject = f"Preisanfrage – {company_name}"
+        elif lang == "uk":
+            fallback_subject = f"Запит щодо постачання будматеріалів — {company_name}"
+        else:
+            fallback_subject = f"Zapytanie ofertowe – {company_name}"
     prompt = build_custom_draft_prompt(
         draft,
         company_name,

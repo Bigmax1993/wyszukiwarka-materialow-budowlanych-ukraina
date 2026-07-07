@@ -36,10 +36,50 @@ Test-Step "py_compile (wszystkie .py)" {
         }
 }
 
-Test-Step "smoke --test" { python de_gu_bauunternehmen_scraper.py --test }
+Test-Step "smoke --test (DE GU)" { python de_gu_bauunternehmen_scraper.py --test }
+
+Test-Step "smoke --test (UA materialy)" { python ua_materialy_scraper.py --test }
 
 Test-Step "regresja discovery GU" {
     python -m unittest tests.test_gu_discovery_regression -v
+}
+
+Test-Step "regresja UA materialy" {
+    python -m unittest tests.test_ua_materialy_regression -v
+}
+
+Test-Step "pytest UA (jednostkowe + integracyjne)" {
+    python -m pytest tests/test_ua_oblast_keywords.py tests/test_ua_inquiry_email_uk.py tests/test_ua_claude_inquiry_email.py tests/test_ua_supplier_filter.py tests/test_ua_materialy_integration.py -q
+}
+
+Test-Step "ua_oblast_rotation" {
+    python -c @"
+from pathlib import Path
+import tempfile
+from ua_oblast_rotation import (
+    load_rotation_state, peek_next_oblast, commit_rotation_after_run,
+    rotation_state_path, OBLAST_ROTATION_ORDER,
+)
+d = Path(tempfile.mkdtemp())
+p = rotation_state_path(d)
+s = load_rotation_state(p)
+oblast = peek_next_oblast(s)
+assert oblast in OBLAST_ROTATION_ORDER
+commit_rotation_after_run(p, s, oblast)
+"@
+}
+
+Test-Step "ua_materialy — brak zalacznikow i MFG" {
+    python -c @"
+from ua_materialy_inquiry_email_uk import DEFAULT_INQUIRY_PHONE_UK, build_fixed_material_inquiry_uk
+import ua_materialy_scraper as ua
+assert ua.get_email_attachments_ua_materialy() == []
+assert ua.UA_EMAIL_ALLOW_ATTACHMENTS is False
+assert DEFAULT_INQUIRY_PHONE_UK == '+380977091141'
+body = build_fixed_material_inquiry_uk()
+assert 'mfg' not in body.lower()
+assert '+380977091141' in body
+"@
 }
 
 Test-Step "gu_bundesland_rotation" {

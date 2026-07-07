@@ -70,6 +70,8 @@ pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela→thu → sync 
 
 **Pełny cykl discovery (test):** `-f discovery_phase=mon`, potem `tue`, `wed`, `thu`, `fri`.
 
+Kampania **UA** (ten sam harmonogram): [`schedule/ua/PLAN_5_DNI_UA.md`](ua/PLAN_5_DNI_UA.md).
+
 **Pełny pipeline po piątku (GHA):**
 
 ```powershell

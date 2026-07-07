@@ -30,9 +30,15 @@ jobs:
           python -m py_compile email_targeting.py
           python -m py_compile de_gu_bauunternehmen_scraper.py
           python -m py_compile de_gu_keywords.py
+          python -m py_compile ua_materialy_scraper.py
+          python -m py_compile ua_oblast_keywords.py
+          python -m py_compile ua_materialy_inquiry_email_uk.py
 
-      - name: Scraper smoke (--test)
+      - name: Scraper smoke DE GU (--test)
         run: python de_gu_bauunternehmen_scraper.py --test
+
+      - name: Scraper smoke UA materialy (--test)
+        run: python ua_materialy_scraper.py --test
 
       - name: Regresja discovery GU i Claude
         run: |
@@ -46,3 +52,14 @@ jobs:
             tests.test_claude_page_text \
             tests.test_discovery_run_state \
             -v
+
+      - name: Regresja i testy UA (pytest + unittest)
+        run: |
+          python -m unittest tests.test_ua_materialy_regression -v
+          python -m pytest \
+            tests/test_ua_oblast_keywords.py \
+            tests/test_ua_inquiry_email_uk.py \
+            tests/test_ua_claude_inquiry_email.py \
+            tests/test_ua_supplier_filter.py \
+            tests/test_ua_materialy_integration.py \
+            -q

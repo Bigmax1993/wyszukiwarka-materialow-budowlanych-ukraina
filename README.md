@@ -1,4 +1,4 @@
-﻿# Wyszukiwarka partnerów — kampania GU (bundesweit)
+﻿# Wyszukiwarka partnerów / materiałów budowlanych
 
 
 
@@ -6,7 +6,83 @@ Repozytorium: [Bigmax1993/Wyszukiwarka-partnerow](https://github.com/Bigmax1993/
 
 
 
-Pipeline: **Serper → strony www → cache/Excel → maile MFG** (Generalunternehmer / Filialbau DE).
+## Kampanie
+
+
+
+| Kampania | Scraper | Opis |
+|----------|---------|------|
+| **DE GU** (legacy) | `de_gu_bauunternehmen_scraper.py` | Generalunternehmer Filialbau DE |
+| **UA materiały** | `ua_materialy_scraper.py` | Hurtownie / składy budmatów Ukraina |
+
+
+
+### UA — materiały budowlane (Ukraina)
+
+
+
+Pipeline: **Serper (gl=ua) → crawl www → Claude verify → Excel → maile UA**.
+
+
+
+| Moduł | Plik |
+|-------|------|
+| Scraper | `ua_materialy_scraper.py` |
+| Frazy per obwód | `ua_oblast_keywords.py` |
+| Rotacja obwodów | `ua_oblast_rotation.py` |
+| Filtr dostawców | `ua_materialy_supplier_filter.py` |
+| Treść maila UK | `ua_materialy_inquiry_email_uk.py` |
+
+
+
+```powershell
+pip install -r requirements.txt
+$env:KANBUD_PROJECT_ROOT = "$PWD\libs"
+
+python ua_materialy_scraper.py --test
+python ua_materialy_scraper.py --rotate-oblast
+python ua_materialy_scraper.py --rotation-status
+python ua_materialy_scraper.py --oblast Kyiv,Lvivska
+python ua_materialy_scraper.py --run-config run_config\ua_kyiv_test.json
+python ua_materialy_scraper.py --dry-run-email --send-emails-only
+```
+
+Testy UA:
+
+```powershell
+python ua_materialy_scraper.py --test
+python -m unittest tests.test_ua_materialy_regression -v
+python -m pytest tests/test_ua_oblast_keywords.py tests/test_ua_inquiry_email_uk.py tests/test_ua_claude_inquiry_email.py tests/test_ua_supplier_filter.py tests/test_ua_materialy_integration.py -q
+```
+
+Maile: **Claude Sonnet** generuje unikalny list ukraiński per firma (nazwa, asortyment ze strony, region). Wymaga `ANTHROPIC_API_KEY`. Wyłączenie: `ENABLE_CLAUDE_INQUIRY_EMAIL=0` w run_config lub env. **Bez załączników** — tylko plain-text.
+
+Nadawca i podpis w mailach UA: `MAIL_SENDER_NAME` (domyślnie Свінчак Максим), telefon `+380977091141` oraz opcjonalnie `INQUIRY_COMPANY_NAME`, `INQUIRY_WEBSITE` w `.env`.
+
+
+
+Wyniki: `Wyniki/ua_materialy_cache.json`, `ua_materialy_kontakte.xlsx`, `ua_materialy_oblast_rotation.json`.
+
+Harmonogram tygodnia (identyczny jak DE GU): [`schedule/ua/PLAN_5_DNI_UA.md`](schedule/ua/PLAN_5_DNI_UA.md)
+
+| Dzień | Godzina (PL) | PC | GitHub Actions |
+|-------|--------------|-----|----------------|
+| **Pon–Pt** | 17:00 / 15:00 / 19:00 / 20:00 / 16:00 | `schedule/ua/run_*_discovery.ps1` | `UA discovery` |
+| **Niedziela** | 06:00 | `schedule/ua/run_niedziela_backfill.ps1` | `UA niedziela backfill` (~05:30) |
+| **Poniedziałek** | 06:00 / 07:00 / 09:00 | prep + send | `Sync wyniki Google Drive UA` → prep → send |
+| **Wtorek** | 09:00 | `schedule/ua/run_wtorek_send.ps1` | `UA wtorek send` |
+
+Task Scheduler UA:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File schedule\ua\register_tasks_5_dni.ps1
+```
+
+---
+
+
+
+### DE GU — Generalunternehmer (legacy)
 
 
 
@@ -230,7 +306,7 @@ powershell -ExecutionPolicy Bypass -File scripts\run_full_pipeline_gha.ps1 -Forc
 
 | `CLAUDE_MODEL_VERIFY` | opcjonalny | Sonnet — weryfikacja www, maile z HTML (domyślnie `claude-sonnet-4-6`) |
 
-| `MAIL_USER`, `MAIL_PASSWORD` | tak (pon+wt) | SMTP + IMAP |
+| `MAIL_USER`, `MAIL_PASSWORD` | tak (pon+wt) | Gmail: hasło aplikacji; yagmail wysyła pocztę |
 
 | `GDRIVE_OAUTH_*` | zalecany | Upload wyników na „Mój dysk” |
 

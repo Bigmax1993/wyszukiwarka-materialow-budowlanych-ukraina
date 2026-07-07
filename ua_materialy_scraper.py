@@ -1,9 +1,9 @@
 ﻿# -*- coding: utf-8 -*-
 """
-Serper API – DE bundesweit: Generalunternehmer (GU), którzy stawiają sklepy/markety (Neubau, Filialbau)
+Serper API – UA: hurtownie / składy / producenci materiałów budowlanych (GU), którzy stawiają sklepy/markety (Neubau, Filialbau)
 lub robią przebudowy/umbau i modernizację filii (Rewe, Aldi, Kaufland, Netto, Penny, Edeka).
 Nicht: Einzelhandels-Märkte als Betreiber, keine Urzędy/Portale.
-E-mail MFG + PPTX nur in diesem Modul (send_email_de_gu).
+E-mail UA (ukraiński) przez yagmail/Gmail w tym module (send_email_ua_materialy).
 Discovery: Serper. www: pełny crawl domeny (requests+BS4) → Claude verify → kontakty z tego samego crawlu (regex/mailto). Przed Excel: Claude cleanup.
 Bez Selenium / Google Maps. Baner cookie: Playwright (tylko „Akceptuj”).
 Jupyter Lab: komórka 1 = %pip install …, komórka 2 = ten plik, komórka 3 = run_in_jupyter(…).
@@ -26,13 +26,14 @@ _kanbud_bootstrap.ensure_import_paths(_campaign)
 
 from campaign_data_paths import campaign_output_paths
 
-_paths = campaign_output_paths(_campaign, "de_gu_bauunternehmen")
+_paths = campaign_output_paths(_campaign, "ua_materialy")
 _DATA_ROOT = _paths["data_root"]
 
 from scraper_web_config import (
     CLAUDE_UNLIMITED,
     ENABLE_CLAUDE_CONTACT_EXTRACT,
     ENABLE_CLAUDE_DISCOVERY_TERMS,
+    ENABLE_CLAUDE_INQUIRY_EMAIL,
     ENABLE_CLAUDE_PAGE_VERIFY,
     ENABLE_CLAUDE_ROW_CLEANUP,
     ENABLE_PLAYWRIGHT_COOKIE_CONSENT,
@@ -40,7 +41,7 @@ from scraper_web_config import (
 
 # Kontakte www: regex + mailto; przy braku email_target — Claude na tekście crawla.
 from playwright_cookie_consent import apply_playwright_cookie_fallback
-from de_gu_keywords import (
+from ua_oblast_keywords import (
     DE_OST_PLACE_MARKERS,
     DE_OST_REGION_KEYWORDS,
     DE_OST_RURAL_HINTS,
@@ -74,7 +75,7 @@ from de_gu_keywords import (
 CAMPAIGN_ACTIVE_BUNDESLAENDER = list(_KW_ACTIVE_BL)
 
 
-def apply_gu_run_config_extras(module, data: dict) -> None:
+def apply_ua_run_config_extras(module, data: dict) -> None:
     """run_config.json: landy, limity, Claude discovery/verify."""
     if data.get("active_bundeslaender"):
         lands = data["active_bundeslaender"]
@@ -95,6 +96,7 @@ def apply_gu_run_config_extras(module, data: dict) -> None:
         "enable_claude_page_verify",
         "enable_claude_contact_extract",
         "enable_claude_row_cleanup",
+        "enable_claude_inquiry_email",
         "require_generalunternehmer",
         "require_market_projects_in_portfolio",
         "require_website_references_or_portfolio",
@@ -195,7 +197,7 @@ from commercial_contact_filter import (
     is_valid_commercial_company_contact,
 )
 from contact_extract_utils import normalize_email_contact, normalize_phone_contact
-from retail_store_builder_filter import (
+from ua_materialy_supplier_filter import (
     detect_required_retail_chains,
     has_retail_references_or_portfolio,
     has_required_retail_chain_mention,
@@ -211,7 +213,7 @@ from retail_store_builder_filter import (
     mentions_retail_store_build_activity,
     mentions_retail_store_build_activity_core,
 )
-import retail_store_builder_filter as _retail_store_builder_filter
+import ua_materialy_supplier_filter as _retail_store_builder_filter
 
 # Przy zapisie cache: usuń urzędy/instytucje z contacts (+ serper/LLM powiązane)
 ENABLE_CACHE_PURGE_INSTITUTIONS = True
@@ -230,7 +232,7 @@ import requests
 from bs4 import BeautifulSoup  # pyright: ignore[reportMissingModuleSource]
 
 # =========================
-# KONFIGURATION – DE GU bundesweit (Einzelhandelsbau)
+# KONFIGURATION – UA materiały budowlane (hurtownie / składy)
 # =========================
 # Wyniki: Google Drive (KANBUD_GOOGLE_DRIVE_GU_PATH) lub folder kampanii — patrz campaign_data_paths.py
 OUTPUT_DIR = _paths["output_dir"]
@@ -248,8 +250,8 @@ PENDING_WWW_VERIFY_REASON = "pending_www_verify"
 CAMPAIGN_TIMEZONE = os.environ.get("SCRAPER_TIMEZONE", "Europe/Warsaw")
 
 # Geo: bundesweit (Filter PLZ/Distanz aus; center nur für Hilfsfunktionen)
-REGION_CENTER_LAT = 51.1657
-REGION_CENTER_LON = 10.4515
+REGION_CENTER_LAT = 48.3794
+REGION_CENTER_LON = 31.1656
 MAX_DISTANCE_FROM_REGION_KM = 9999
 # Grobe Bounding-Box Deutschland (optional)
 DE_DE_BBOX_LAT_MIN = 47.25
@@ -266,8 +268,8 @@ STEP_LOG_WITH_TIMESTAMP = True
 
 SERPER_API_URL = "https://google.serper.dev/search"
 SERPER_PLACES_API_URL = "https://google.serper.dev/places"
-SERPER_COUNTRY = "de"
-SERPER_LANGUAGE = "de"
+SERPER_COUNTRY = "ua"
+SERPER_LANGUAGE = "uk"
 SERPER_TIMEOUT = 20
 SERPER_DAILY_LIMIT = 1000
 _serper_limit_env = (os.environ.get("SERPER_DAILY_LIMIT") or "").strip()
@@ -280,7 +282,7 @@ if _serper_limit_env:
 SERPER_UNLIMITED = False
 FORCE_SERPER_LOOKUP = True
 SERPER_DISCOVERY_RESULTS_PER_TERM = 30
-COUNTRY_RESTRICTION = "DE"
+COUNTRY_RESTRICTION = "UA"
 ENABLE_REGION_PLZ_FILTER = False
 ENABLE_DISTANCE_FROM_REGION_KM = False
 ENABLE_PLZ_PREFIX_REGION_MATCH = False
@@ -296,21 +298,12 @@ ENABLE_AUTO_EMAIL = True
 # Własny szablon z GUI (Claude dopracowuje per firma); nie dotyczy przypomnień
 CUSTOM_EMAIL_DRAFT = ""
 USE_CUSTOM_EMAIL_TEMPLATE = False
-CUSTOM_EMAIL_LANG = "de"
-CUSTOM_EMAIL_CITY = "Deutschland"
+CUSTOM_EMAIL_LANG = "uk"
+CUSTOM_EMAIL_CITY = "Україна"
 CUSTOM_EMAIL_CONTEXT: dict = {}
-EMAIL_SUBJECT_TEMPLATE = (
-    "Kooperationsanfrage / Fliesen- & Estricharbeiten für Lebensmittelmärkte "
-    "(REWE, ALDI, NETTO etc.)"
-)
+EMAIL_SUBJECT_TEMPLATE = "Запит щодо постачання будівельних матеріалів"
 # Obligatorischer Betreff (word-for-word; bez zmian przez LLM)
-FIXED_EMAIL_SUBJECT_DE = EMAIL_SUBJECT_TEMPLATE
-EMAIL_SIGNATURE = (
-    "Mit freundlichen Grüßen\n\n"
-    "Maksym Swinczak\n\n"
-    "MFG Moderner Fliesenboden GmbH\n\n"
-    "Tel.: +49 1522 3655 399"
-)
+FIXED_EMAIL_SUBJECT_UK = EMAIL_SUBJECT_TEMPLATE
 BACKGROUND_ONLY_DEFAULT = True
 DAILY_EMAIL_LIMIT = 300
 EMAIL_PER_DOMAIN_DAILY_LIMIT = 2
@@ -320,11 +313,11 @@ _SEND_WINDOW_CFG = load_send_window_config()
 SEND_WINDOW_START_HOUR = _SEND_WINDOW_CFG.start_hour
 SEND_WINDOW_END_HOUR = _SEND_WINDOW_CFG.end_hour
 SEND_WINDOW_DISABLED = _SEND_WINDOW_CFG.disabled
-SUBJECT_VARIANTS = [FIXED_EMAIL_SUBJECT_DE]
+SUBJECT_VARIANTS = [FIXED_EMAIL_SUBJECT_UK]
 PROMPT_VARIANTS = [
-    "Formell und sachlich, wie eine normale B2B-Anfrage.",
-    "Kurz und natürlich – Kooperation GU / Estrich und Fliesen.",
-    "Professionell-freundlich, ohne übertriebene Floskeln.",
+    "Офіційний діловий стиль, конкретно і по суті.",
+    "Природний B2B-стиль — як лист від менеджера закупівель, без канцеляризмів.",
+    "Коротко й професійно, з акцентом на асортимент і оптові умови.",
 ]
 EMAIL_SEND_DELAY_MIN_SECONDS = 22
 EMAIL_SEND_DELAY_MAX_SECONDS = 58
@@ -337,6 +330,11 @@ EMAIL_SPAMMY_TERMS = [
     "kliknij",
     "super okazja",
     "wyprzedaż",
+    "безкоштовно",
+    "акція",
+    "терміново",
+    "клікніть",
+    "знижка",
     "kostenlos",
     "sonderangebot",
 ]
@@ -386,25 +384,27 @@ SERPER_BAD_DOMAINS = [
 ]
 # Silne obce TLD — odrzucenie tylko domeny, nie słów w snippetcie Google
 _FOREIGN_TLD_SUFFIXES = (
-    ".at",
-    ".ch",
+    ".ru",
+    ".by",
     ".pl",
-    ".cz",
-    ".fr",
-    ".it",
-    ".nl",
-    ".be",
-    ".lu",
+    ".de",
+    ".ro",
+    ".md",
 )
 # Geo / Serper – de_gu_keywords.py
-DE_COUNTRY_HINTS = [
-    "deutschland",
-    "germany",
-    "bundesrepublik",
-    ".de/",
-    *DE_OST_PLACE_MARKERS,
-    *DE_OST_RURAL_HINTS,
-    *DE_OST_REGION_KEYWORDS,
+UA_COUNTRY_HINTS = [
+    "україна",
+    "ukraine",
+    "украина",
+    ".ua/",
+    "київ",
+    "kyiv",
+    "львів",
+    "lviv",
+    "одеса",
+    "odesa",
+    "харків",
+    "kharkiv",
 ]
 DE_EAST_PLZ_PREFIXES = frozenset({
     "01", "02", "03", "04", "06", "07", "08", "09",
@@ -422,37 +422,26 @@ SUPPRESSED_EMAIL_LOCALPARTS = {
 EXPORT_COLUMNS = [
     "Firmenname",
     "Adresse",
-    "Bundesland",
+    "Oblast",
     "Telefon",
     "E-Mail",
     "Webseite",
-    "Handelsketten",
+    "Kategorie_materialow",
     "WWW_geprueft",
     "Kleinunternehmen",
 ]
-GERMAN_STATES = [
-    "Baden-Wuerttemberg",
-    "Bayern",
-    "Berlin",
-    "Brandenburg",
-    "Bremen",
-    "Hamburg",
-    "Hessen",
-    "Mecklenburg-Vorpommern",
-    "Niedersachsen",
-    "Nordrhein-Westfalen",
-    "Rheinland-Pfalz",
-    "Saarland",
-    "Sachsen",
-    "Sachsen-Anhalt",
-    "Schleswig-Holstein",
-    "Thueringen",
+UA_OBLASTS = [
+    "Kyiv", "Kyivska", "Lvivska", "Odeska", "Kharkivska", "Dnipropetrovska",
+    "Zaporizka", "Vinnytska", "Poltavska", "Cherkaska", "Zhytomyrska",
+    "Rivnenska", "Volyn", "Ternopilska", "Ivano-Frankivska", "Chernivetska",
+    "Zakarpatska", "Khmelnytska", "Chernihivska", "Sumska", "Mykolaivska",
+    "Kirovohradska", "Khersonska", "Donetska", "Luhanska",
 ]
 
 # Kontext Anfrage (Referenz im Code; Mailtext = fester Block unten)
-INQUIRY_REGION_DE = "Deutschland (bundesweit)"
-RETAIL_CHAINS_DE = "Aldi, Penny, Kaufland, Netto, Rewe,Edeka"
-DELIVERY_ADDRESS_DE = "Deutschland (bundesweit)"
+INQUIRY_REGION_UA = "Україна"
+MATERIAL_CATEGORIES_UA = "цемент, пісок, щебінь, цегла, блок, арматура, утеплювач"
+DELIVERY_ADDRESS_UA = "Україна"
 
 # Tylko Generalunternehmer (GU) — nie sam Ladenbau ani ogólne Bauunternehmen
 REQUIRE_GENERALUNTERNEHMER = True
@@ -460,12 +449,12 @@ _retail_store_builder_filter.REQUIRE_GENERALUNTERNEHMER = REQUIRE_GENERALUNTERNE
 
 # Weryfikacja www: GU/Filialbau + Neubau/Umbau + obowiązkowy dowód projektów marketów
 REQUIRE_WEBSITE_RETAIL_VERIFICATION = True
-REQUIRE_WEBSITE_REFERENCES_OR_PORTFOLIO = True
-REQUIRE_MARKET_PROJECTS_IN_PORTFOLIO = True
+REQUIRE_WEBSITE_REFERENCES_OR_PORTFOLIO = False
+REQUIRE_MARKET_PROJECTS_IN_PORTFOLIO = False
 # Tylko małe firmy (Kleinunternehmen) — duże koncerny odrzucane
-REQUIRE_SMALL_FIRM = True
+REQUIRE_SMALL_FIRM = False
 # Obowiązkowa wzmianka o Aldi, Rewe, Edeka, Lidl, Netto lub Penny na stronie
-REQUIRE_NAMED_RETAIL_CHAIN = True
+REQUIRE_NAMED_RETAIL_CHAIN = False
 CLAUDE_DISCOVERY_MAX_ROUNDS = 3
 CLAUDE_DISCOVERY_TERMS_PER_ROUND = 8
 SERPER_DISCOVERY_RESERVE = 333
@@ -642,15 +631,9 @@ SMALL_COMPANY_DISCOVERY_TERMS = (
 )
 
 
-from mfg_gu_inquiry_email_de import FIXED_GU_INQUIRY_DE, build_fixed_gu_inquiry_de
-from mfg_gu_email_attachment import (
-    GOOGLE_SLIDES_PRESENTATION_ID,
-    GOOGLE_SLIDES_URL,
-    ensure_mfg_email_attachment,
-)
-_OST_GU_SMTP_DEFAULT_HOST = "serwer.home.pl"
-_OST_GU_SMTP_PORT_SSL = 465
-_OST_GU_SMTP_PORT_STARTTLS = 587
+from ua_materialy_inquiry_email_uk import FIXED_MATERIAL_INQUIRY_UK, build_fixed_material_inquiry_uk
+ENABLE_EMAIL_ATTACHMENT = False
+UA_EMAIL_ALLOW_ATTACHMENTS = False
 
 
 def _ost_gu_truthy(raw: str) -> bool:
@@ -668,162 +651,14 @@ def is_serper_unlimited() -> bool:
     )
 
 
-def _ost_gu_split_recipients(raw: str) -> list[str]:
-    if not raw:
-        return []
-    if str(raw).strip().lower() in ("0", "off", "false", "no", "nie"):
-        return []
-    parts = re.split(r"[,;]+", raw)
-    return [p.strip() for p in parts if p.strip()]
-
-
-def _ost_gu_smtp_host() -> str:
-    from scraper_env import ENV_SMTP_HOST, get_env_value, get_mail_user
-
-    host = get_env_value(ENV_SMTP_HOST).strip()
-    if host:
-        return host
-    addr = (get_mail_user() or "").strip().lower()
-    if "@gmail.com" in addr or "@googlemail.com" in addr:
-        return "smtp.gmail.com"
-    return _OST_GU_SMTP_DEFAULT_HOST
-
-
-def _ost_gu_smtp_port() -> int:
-    from scraper_env import ENV_SMTP_PORT, ENV_SMTP_SSL, get_env_value
-
-    raw = get_env_value(ENV_SMTP_PORT).strip()
-    if raw.isdigit():
-        return int(raw)
-    if _ost_gu_truthy(get_env_value(ENV_SMTP_SSL)):
-        return _OST_GU_SMTP_PORT_SSL
-    return _OST_GU_SMTP_PORT_STARTTLS
-
-
-def _ost_gu_smtp_use_ssl() -> bool:
-    from scraper_env import ENV_SMTP_SSL, get_env_value
-
-    if get_env_value(ENV_SMTP_SSL).strip():
-        return _ost_gu_truthy(get_env_value(ENV_SMTP_SSL))
-    return _ost_gu_smtp_port() == _OST_GU_SMTP_PORT_SSL
-
-
-def _ost_gu_yagmail_client():
-    import yagmail  # pyright: ignore[reportMissingImports]
-
-    from scraper_env import get_mail_password, get_mail_user
-
-    username = get_mail_user()
-    password = get_mail_password()
-    if not (username and password):
-        raise ValueError("brak MAIL_USER / MAIL_PASSWORD")
-    host = _ost_gu_smtp_host()
-    if not host:
-        return yagmail.SMTP(user=username, password=password)
-    port = _ost_gu_smtp_port()
-    use_ssl = _ost_gu_smtp_use_ssl()
-    return yagmail.SMTP(
-        user=username,
-        password=password,
-        host=host,
-        port=port,
-        smtp_ssl=use_ssl,
-        smtp_starttls=not use_ssl,
-    )
-
-
-def get_email_attachments_de_gu(logger: logging.Logger | None = None) -> list[str]:
-    """Załącznik PPTX ze Slides — zawsze wymagany przy wysyłce."""
-    path = ensure_mfg_email_attachment(CAMPAIGN_DIR, logger)
-    if path and path.is_file():
-        return [str(path.resolve())]
-    return []
-
-
-def _build_de_gu_outgoing_email(
-    username: str,
-    to_email: str,
-    subject: str,
-    body_plain: str,
-    *,
-    cc: list[str],
-    attachment_path: Path | None,
-) -> "EmailMessage":
-    import mimetypes
-    from email.message import EmailMessage
-
-    from scraper_env import get_mail_sender_name
-
-    msg = EmailMessage()
-    sender_name = " ".join((get_mail_sender_name() or "").replace("\n", " ").split()).strip()
-    if sender_name:
-        msg["From"] = f"{sender_name} <{username}>"
-    else:
-        msg["From"] = username
-    msg["To"] = to_email
-    if cc:
-        msg["Cc"] = ", ".join(cc)
-    msg["Subject"] = subject
-    msg.set_content(body_plain, subtype="plain", charset="utf-8")
-    if attachment_path and attachment_path.is_file():
-        data = attachment_path.read_bytes()
-        ctype, _enc = mimetypes.guess_type(str(attachment_path))
-        if ctype and "/" in ctype:
-            maintype, subtype = ctype.split("/", 1)
-        else:
-            maintype, subtype = (
-                "application",
-                "vnd.openxmlformats-officedocument.presentationml.presentation",
-            )
-        msg.add_attachment(
-            data,
-            maintype=maintype,
-            subtype=subtype,
-            filename=attachment_path.name,
+def get_email_attachments_ua_materialy(logger: logging.Logger | None = None) -> list[str]:
+    """Kampania UA — zawsze bez załączników (tylko treść maila)."""
+    _ = logger
+    if ENABLE_EMAIL_ATTACHMENT or UA_EMAIL_ALLOW_ATTACHMENTS:
+        logger and logger.warning(
+            "UA materialy: załączniki wyłączone — ignoruję ENABLE_EMAIL_ATTACHMENT"
         )
-    return msg
-
-
-def _send_de_gu_via_smtp(
-    msg: "EmailMessage",
-    *,
-    username: str,
-    password: str,
-    to_email: str,
-    cc: list[str],
-    bcc: list[str],
-    logger: logging.Logger,
-) -> None:
-    import smtplib
-
-    recipients: list[str] = [to_email]
-    for addr in cc + bcc:
-        if addr and addr.lower() not in {x.lower() for x in recipients}:
-            recipients.append(addr)
-    host = _ost_gu_smtp_host()
-    port = _ost_gu_smtp_port()
-    use_ssl = _ost_gu_smtp_use_ssl()
-    try:
-        smtp_timeout = int((os.environ.get("SMTP_TIMEOUT") or "300").strip())
-    except (TypeError, ValueError):
-        smtp_timeout = 300
-    smtp_timeout = max(60, min(smtp_timeout, 600))
-    if use_ssl:
-        with smtplib.SMTP_SSL(host, port, timeout=smtp_timeout) as smtp:
-            smtp.login(username, password)
-            smtp.send_message(msg, from_addr=username, to_addrs=recipients)
-    else:
-        with smtplib.SMTP(host, port, timeout=smtp_timeout) as smtp:
-            smtp.ehlo()
-            smtp.starttls()
-            smtp.ehlo()
-            smtp.login(username, password)
-            smtp.send_message(msg, from_addr=username, to_addrs=recipients)
-    logger.info(
-        "DE Ost GU: SMTP send_message OK → %s (odbiorcy SMTP: %s)",
-        host,
-        len(recipients),
-    )
+    return []
 
 
 def console_step(message: str) -> None:
@@ -859,7 +694,7 @@ def wait_for_user_confirmation(message: str, jupyter_mode: bool = False) -> None
 
 def setup_logging() -> logging.Logger:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    return setup_script_logging("de_gu_bauunternehmen_scraper", LOG_FILE)
+    return setup_script_logging("ua_materialy_scraper", LOG_FILE)
 
 
 def save_csv(rows, path: Path) -> None:
@@ -956,8 +791,8 @@ def save_excel(rows, path: Path, logger: logging.Logger, cache=None) -> None:
         cfg = ReplySyncConfig(
             cache_path=CACHE_FILE,
             xlsx_path=path,
-            lang="de",
-            campaign_id="de_gu_bauunternehmen",
+            lang="uk",
+            campaign_id="ua_materialy",
         )
         try:
             write_excel_with_reply_styles(
@@ -982,8 +817,8 @@ def save_excel(rows, path: Path, logger: logging.Logger, cache=None) -> None:
             cfg_alt = ReplySyncConfig(
                 cache_path=CACHE_FILE,
                 xlsx_path=alt,
-                lang="de",
-                campaign_id="de_gu_bauunternehmen",
+                lang="uk",
+                campaign_id="ua_materialy",
             )
             write_excel_with_reply_styles(
                 alt,
@@ -1010,7 +845,7 @@ def extract_bundesland(row: dict) -> str:
     text = " ".join(
         x for x in [(row.get("full_address") or ""), (row.get("adres") or "")] if x
     ).lower()
-    for state in GERMAN_STATES:
+    for state in UA_OBLASTS:
         if state.lower() in text:
             return state
     mapping = (
@@ -1325,7 +1160,7 @@ def build_claude_row_cleanup_prompt(
     handelsketten: str = "",
     url: str = "",
 ) -> str:
-    from claude_prompts import build_row_cleanup_prompt
+    from ua_claude_prompts import build_row_cleanup_prompt
 
     return build_row_cleanup_prompt(
         company=company,
@@ -1404,7 +1239,7 @@ def finalize_row_for_excel_tables(row: dict) -> dict:
     row["retail_chains_found"] = format_handelsketten_for_excel(
         row.get("retail_chains_found") or ""
     )
-    if row.get("bundesland") not in GERMAN_STATES:
+    if row.get("bundesland") not in UA_OBLASTS:
         row["bundesland"] = extract_bundesland(row)
     return row
 
@@ -1417,12 +1252,12 @@ def row_to_excel_kontakte_columns(row: dict, email: str = "") -> dict:
     return {
         "Nazwa firmy": (row.get("company_name_clean") or row.get("nazwa") or "").strip(),
         "Adres": (row.get("adres") or row.get("full_address") or "").strip(),
-        "Bundesland": (row.get("bundesland") or "").strip(),
+        "Oblast": (row.get("bundesland") or "").strip(),
         "Telefon": (row.get("telefon") or "").strip(),
         "E-mail": mail,
         "Strona www": website,
         "URL": (row.get("url") or website_base_url(website) or "").strip(),
-        "Handelsketten": (row.get("retail_chains_found") or "").strip(),
+        "Kategorie_materialow": (row.get("retail_chains_found") or "").strip(),
     }
 
 
@@ -1431,7 +1266,7 @@ def row_to_excel_wojewodztwa_columns(row: dict) -> dict:
     row = finalize_row_for_excel_tables(dict(row))
     return {
         "Nazwa firmy": (row.get("company_name_clean") or row.get("nazwa") or "").strip(),
-        "Bundesland": (row.get("bundesland") or "").strip(),
+        "Oblast": (row.get("bundesland") or "").strip(),
         "Adres": (row.get("adres") or row.get("full_address") or "").strip(),
         "Strona www": (row.get("official_website") or row.get("www") or "").strip(),
         "URL": (row.get("url") or "").strip(),
@@ -1495,7 +1330,7 @@ def enrich_row_with_claude_cleanup(row: dict, logger: logging.Logger, cache: dic
         row = apply_regex_row_contact_cleanup(row)
         return finalize_row_for_excel_tables(row)
 
-    states = ", ".join(GERMAN_STATES)
+    states = ", ".join(UA_OBLASTS)
     prompt = build_claude_row_cleanup_prompt(
         company=company,
         address=address,
@@ -1532,7 +1367,7 @@ def enrich_row_with_claude_cleanup(row: dict, logger: logging.Logger, cache: dic
         ),
         "url": sanitize_special_text(parsed.get("url", row.get("url") or website)),
     }
-    if claude_result["bundesland"] not in GERMAN_STATES:
+    if claude_result["bundesland"] not in UA_OBLASTS:
         claude_result["bundesland"] = extract_bundesland(row)
     apply_row_enrichment_to_row(row, claude_result)
     if cache_key:
@@ -1667,7 +1502,7 @@ def build_export_rows(rows, logger=None, cache=None):
             "Status": _excel_status_label(row),
         }
         if cache is not None and email:
-            base = merge_export_row(base, cache, email, lang="de")
+            base = merge_export_row(base, cache, email, lang="uk")
         export_rows.append(base)
     if logger is not None:
         with_mail = sum(1 for r in export_rows if (r.get("E-mail") or "").strip())
@@ -1691,7 +1526,7 @@ def build_bundesland_rows(rows):
         row_url = (table.get("URL") or "").strip()
         if row_name.lower() == "nieznana firma" and not row_url:
             continue
-        row_state = (table.get("Bundesland") or "").strip()
+        row_state = (table.get("Oblast") or "").strip()
         row_address = (table.get("Adres") or "").strip()
         dedupe_key = row_url or f"{row_name}|{row_state}|{row_address}"
         if dedupe_key in seen:
@@ -1713,7 +1548,7 @@ def persist_progress(all_rows, cache, logger: logging.Logger, reason: str = "") 
 EXCEL_IMPORT_COLUMNS = {
     "Nazwa firmy": "nazwa",
     "Adres": "adres",
-    "Bundesland": "bundesland",
+    "Oblast": "bundesland",
     "Telefon": "telefon",
     "E-mail": "email_target",
     "Strona www": "www",
@@ -1760,7 +1595,7 @@ def row_from_excel_record(rec: dict) -> dict:
         row["is_small_firm"] = True
     elif small_col == "nein":
         row["is_small_firm"] = False
-    chains = str(rec.get("Handelsketten") or "").strip()
+    chains = str(rec.get("Kategorie_materialow") or "").strip()
     if chains:
         row["retail_chains_found"] = chains
     return row
@@ -2472,23 +2307,29 @@ def sanitize_generated_email(subject: str, body: str, company_name: str):
     for term in EMAIL_SPAMMY_TERMS:
         if term in lowered_body:
             clean_body = re.sub(term, "", clean_body, flags=re.IGNORECASE)
+    from ua_materialy_inquiry_email_uk import strip_de_campaign_branding, strip_german_phones_from_text
+
+    clean_body = strip_german_phones_from_text(clean_body)
+    clean_body = strip_de_campaign_branding(clean_body)
     clean_body = re.sub(r"\n{3,}", "\n\n", clean_body).strip()
     return clean_subject, clean_body
 
 
 def sanitize_sender_name(sender_name: str) -> str:
+    from ua_materialy_inquiry_email_uk import inquiry_company_name, inquiry_sender_name
+
     text = (sender_name or "").strip()
+    default_name = inquiry_sender_name()
+    default_company = inquiry_company_name()
+    default = f"{default_name}, {default_company}" if default_company else default_name
     if not text:
-        return "Maksym Swinczak, MFG Modernerfliesenboden GmbH"
+        return default
     text = re.sub(r"\b(tel|telefon)\b.*$", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"https?://\S+|\bwww\.\S+|\S+@\S+", "", text, flags=re.IGNORECASE).strip()
     text = re.sub(r"\+?\d[\d\s()./-]{5,}\d", "", text).strip()
     text = re.sub(r"\s+", " ", text).strip(" ,;-")
     if not text:
-        return "Maksym Swinczak, MFG Modernerfliesenboden GmbH"
-    m = re.search(r"\bGmbH\b", text, flags=re.IGNORECASE)
-    if m:
-        text = text[: m.end()].strip(" ,;-")
+        return default
     return text
 
 
@@ -2859,7 +2700,7 @@ def request_with_retry(
 
 def choose_subject_variant(company_name: str) -> str:
     _ = company_name
-    return FIXED_EMAIL_SUBJECT_DE
+    return FIXED_EMAIL_SUBJECT_UK
 
 
 def choose_prompt_variant(company_name: str) -> str:
@@ -3449,7 +3290,7 @@ def verify_company_on_website(
 
     if ENABLE_CLAUDE_PAGE_VERIFY:
         from claude_client import is_claude_rate_limited
-        from claude_page_verify import claude_verify_company_page
+        from ua_claude_page_verify import claude_verify_company_page
 
         if get_anthropic_api_key() and not is_claude_rate_limited(cache):
             claude = claude_verify_company_page(
@@ -3627,7 +3468,7 @@ def is_germany_de_candidate(link: str, title: str = "", snippet: str = "") -> bo
         return False
     if re.search(r"\b\d{5}\b", text):
         return True
-    if any(x in text for x in DE_COUNTRY_HINTS):
+    if any(x in text for x in UA_COUNTRY_HINTS):
         return True
     if ".de/" in text or text.rstrip("/").endswith(".de"):
         return True
@@ -5170,59 +5011,94 @@ def collect_contacts_from_website(
 
 
 def _assemble_inquiry_email_body(company_name: str, opening: str = "") -> str:
-    """Fester Block FIXED_GU_INQUIRY_DE."""
-    _ = company_name, opening  # zachowane dla kompatybilności wywołań
-    return FIXED_GU_INQUIRY_DE.strip()
+    """Fallback — stały szablon UA gdy Claude niedostępny."""
+    _ = company_name, opening
+    return FIXED_MATERIAL_INQUIRY_UK.strip()
 
 
-def generate_email_content(company_name: str, logger: logging.Logger, cache=None):
-    """Wyłącznie stały tekst z mfg_gu_inquiry_email_de."""
-    _ = company_name, logger, cache
-    console_step("E-Mail: fester MFG-Text (mfg_gu_inquiry_email_de)")
-    return FIXED_EMAIL_SUBJECT_DE, FIXED_GU_INQUIRY_DE.strip()
+def generate_email_content(
+    company_name: str,
+    logger: logging.Logger,
+    cache=None,
+    *,
+    contact_info: dict | None = None,
+    place_url: str = "",
+):
+    """Spersonalizowany mail UA przez Claude (unikalny per firma)."""
+    from email_custom_template import inquiry_try_custom
+    from ua_claude_inquiry_email import claude_generate_inquiry_email_ua
+
+    display_name = (
+        (contact_info or {}).get("company_name_clean")
+        or (contact_info or {}).get("company_name")
+        or company_name
+        or "Постачальник"
+    )
+    subject_hint = choose_subject_variant(display_name)
+
+    custom = inquiry_try_custom(
+        use_custom=USE_CUSTOM_EMAIL_TEMPLATE,
+        custom_draft=CUSTOM_EMAIL_DRAFT,
+        company_name=display_name,
+        lang=CUSTOM_EMAIL_LANG,
+        logger=logger,
+        subject_hint=subject_hint,
+        email_context={
+            **(CUSTOM_EMAIL_CONTEXT or {}),
+            "city_name": (CUSTOM_EMAIL_CONTEXT or {}).get("city_name") or CUSTOM_EMAIL_CITY,
+            "delivery_address": (CUSTOM_EMAIL_CONTEXT or {}).get("delivery_address")
+            or DELIVERY_ADDRESS_UA,
+        },
+        on_step=console_step,
+    )
+    if custom is not None:
+        subject, body = custom
+        return sanitize_generated_email(subject, body, display_name)
+
+    if ENABLE_CLAUDE_INQUIRY_EMAIL:
+        style = choose_prompt_variant(display_name)
+        generated = claude_generate_inquiry_email_ua(
+            display_name,
+            logger,
+            cache,
+            contact_info=contact_info,
+            cache_key=place_url or (contact_info or {}).get("url") or "",
+            style_hint=style,
+            on_step=console_step,
+        )
+        if generated:
+            subject, body = generated
+            console_step(f"E-mail: Claude UA (personalizowany) → {display_name}")
+            return sanitize_generated_email(subject, body, display_name)
+
+    console_step(f"E-mail: stały szablon UA (fallback) → {display_name}")
+    return subject_hint, _assemble_inquiry_email_body(display_name)
 
 
-def send_email_de_gu(
+def send_email_ua_materialy(
     to_email: str,
     subject: str,
     body: str,
     logger: logging.Logger,
 ) -> tuple[bool, str]:
-    """Wysyłka kampanii DE GU przez yagmail (Gmail lub SMTP z .env) + załącznik PPTX."""
-    from mail_transport import send_smtp_email
-    from mfg_mail_recipients import merge_mfg_campaign_cc
+    """Wysyłka kampanii UA przez yagmail (Gmail lub SMTP z .env). Bez załączników."""
+    from mail_transport import merge_mail_cc_recipients, send_smtp_email
     from scraper_env import ENV_MAIL_CC, get_env_value, get_mail_password, get_mail_user
 
     if not (get_mail_user() and get_mail_password()):
         return False, "brak MAIL_USER / MAIL_PASSWORD"
 
-    attach_paths = get_email_attachments_de_gu(logger)
-    if not attach_paths:
-        return (
-            False,
-            f"Brak załącznika PPTX (Google Slides {GOOGLE_SLIDES_PRESENTATION_ID}). "
-            f"Udostępnij prezentację lub ustaw MFG_EMAIL_ATTACHMENT_PATH. {GOOGLE_SLIDES_URL}",
-        )
-    attach_path = Path(attach_paths[0])
-    size_mb = attach_path.stat().st_size / (1024 * 1024)
-    logger.info("DE GU: załącznik %s (%.1f MB)", attach_path.name, size_mb)
-    if size_mb > 15:
-        logger.warning(
-            "DE GU: duży PPTX (%.1f MB) — Gmail może odrzucić załącznik.",
-            size_mb,
-        )
-
-    cc = merge_mfg_campaign_cc(to_email, get_env_value(ENV_MAIL_CC))
-    logger.info("DE GU: Cc=%s", ", ".join(cc) if cc else "(brak)")
+    cc = merge_mail_cc_recipients(to_email, get_env_value(ENV_MAIL_CC))
+    logger.info("UA materialy: Cc=%s | załączniki: brak", ", ".join(cc) if cc else "(brak)")
     return send_smtp_email(
         to_email,
         subject,
         body,
         logger,
-        mail_type="DE Ost GU",
-        campaign="de_gu_bauunternehmen",
-        attachment_paths=attach_paths,
+        mail_type="UA materialy",
+        campaign="ua_materialy",
         cc=cc,
+        attachment_paths=[],
     )
 
 
@@ -5345,13 +5221,17 @@ def _process_email_jobs(
         if force_resend:
             cache.setdefault("email_suppression", {}).pop(target.lower(), None)
         subject, body = generate_email_content(
-            mail.get("company_name", "Firma"), logger, cache=cache
+            mail.get("company_name", "Firma"),
+            logger,
+            cache=cache,
+            contact_info=cache.get("contacts", {}).get(mail.get("place_url"), {}),
+            place_url=mail.get("place_url") or "",
         )
         if dry_run_email:
             ok, info = True, "dry_run"
             status = f"dry_run_{today}"
         else:
-            ok, info = send_email_de_gu(target, subject, body, logger)
+            ok, info = send_email_ua_materialy(target, subject, body, logger)
             status = "sent" if ok else f"error: {info}"
             if not ok and is_soft_bounce_or_spam_error(info):
                 status = f"soft_fail_spam_{today}"
@@ -5368,8 +5248,8 @@ def _process_email_jobs(
                 c,
                 subject,
                 body=body,
-                lang="de",
-                campaign_id="de_gu_bauunternehmen",
+                lang="uk",
+                campaign_id="ua_materialy",
             )
         if status.startswith("error:"):
             lowered = status.lower()
@@ -5856,7 +5736,7 @@ def run_scraper(
     force_resend: bool = False,
     ignore_send_window: bool = False,
     rebuild_from_cache: bool = False,
-    rotate_bundesland: bool = False,
+    rotate_oblast: bool = False,
     **_deprecated_kwargs,
 ):
     if jupyter_mode is None:
@@ -5864,7 +5744,7 @@ def run_scraper(
     auto_email_explicit = enable_auto_email is not None
     if enable_auto_email is None:
         enable_auto_email = ENABLE_AUTO_EMAIL
-    rotate_mode = bool(rotate_bundesland and discovery_mode != "emails_only")
+    rotate_mode = bool(rotate_oblast and discovery_mode != "emails_only")
     serper_only = discovery_mode == "serper_only"
     if serper_only and discovery_mode != "emails_only":
         console_step(
@@ -5892,8 +5772,8 @@ def run_scraper(
     rotation_land: str | None = None
     rotation_state: dict | None = None
     rotation_state_path = None
-    if rotate_bundesland and discovery_mode != "emails_only" and not rebuild_from_cache:
-        from gu_bundesland_rotation import (
+    if rotate_oblast and discovery_mode != "emails_only" and not rebuild_from_cache:
+        from ua_oblast_rotation import (
             apply_rotation_to_module,
             commit_rotation_after_run,
             format_rotation_status,
@@ -5909,7 +5789,7 @@ def run_scraper(
         )
         print(f"[ROTACJA] {format_rotation_status(OUTPUT_DIR)}")
 
-    logger.info("=== START DE GU bundesweit – GU Einzelhandelsbau bundesweit (Serper API) ===")
+    logger.info("=== START UA materiały budowlane — hurtownie / składy (Serper API) ===")
     start_scraper_runtime_clock()
     if SCRAPER_MAX_RUNTIME_SECONDS > 0:
         console_step(
@@ -5917,7 +5797,7 @@ def run_scraper(
             f"({SCRAPER_MAX_RUNTIME_SECONDS // 3600}h)"
         )
     print(
-        "[START] Scraper Deutschland GU Filialbau – GU Neubau/Umbau Lebensmittelmärkte (Serper API)."
+        "[START] Scraper UA — hurtownie / składy materiałów budowlanych (Serper API)."
     )
     print(
         f"[MODUS] Jupyter={jupyter_mode} | Auto-Mail={enable_auto_email} | "
@@ -6226,7 +6106,7 @@ def run_scraper(
         and discovery_mode != "emails_only"
         and not serper_only
     ):
-        from gu_bundesland_rotation import commit_rotation_after_run
+        from ua_oblast_rotation import commit_rotation_after_run
 
         verified_n = count_retail_verified_for_bundesland(all_rows, rotation_land)
         if verified_n >= MIN_VERIFIED_CONTACTS_ROTATION:
@@ -6305,31 +6185,50 @@ def _run_smoke_tests() -> None:
     assert location_within_region_km("GU Filialbau Köln Nordrhein-Westfalen")
     assert ENABLE_PLZ_PREFIX_REGION_MATCH is False
     assert ENABLE_REGION_PLZ_FILTER is False
-    assert "Deutschland" in INQUIRY_REGION_DE
-    assert "Aldi" in RETAIL_CHAINS_DE
-    assert "MFG Moderner Fliesenboden GmbH" in FIXED_GU_INQUIRY_DE
-    assert "spezialisiertes Bodenlegerunternehmen" in FIXED_GU_INQUIRY_DE
-    assert "Rüttelboden" in FIXED_GU_INQUIRY_DE
-    assert "Lebensmitteleinzelhandel" in FIXED_GU_INQUIRY_DE
-    assert "ALDI, REWE, NETTO" in FIXED_GU_INQUIRY_DE
-    assert "Fliesen- & Estricharbeiten" in FIXED_EMAIL_SUBJECT_DE
-    assert "Maksym Swinczak" in FIXED_GU_INQUIRY_DE
-    assert FIXED_EMAIL_SUBJECT_DE.startswith("Kooperationsanfrage")
-    assert choose_subject_variant("Test GmbH") == FIXED_EMAIL_SUBJECT_DE
-    assert GOOGLE_SLIDES_PRESENTATION_ID == "1kBnp5x0pdgXZSPzVte9e92IUgn2A5gSe"
-    _att = ensure_mfg_email_attachment(CAMPAIGN_DIR)
-    if _att and _att.is_file():
-        assert get_email_attachments_de_gu()[0].endswith(".pptx")
-    assert callable(send_email_de_gu)
-    body = _assemble_inquiry_email_body("Test GmbH", "Kurzer Test.")
-    assert body == FIXED_GU_INQUIRY_DE.strip()
-    cleaned = sanitize_email_body(FIXED_GU_INQUIRY_DE)
+    assert "Україна" in INQUIRY_REGION_UA
+    assert "цемент" in MATERIAL_CATEGORIES_UA
+    assert "будівельних матеріалів" in FIXED_MATERIAL_INQUIRY_UK
+    assert "цемент" in FIXED_MATERIAL_INQUIRY_UK or "пісок" in FIXED_MATERIAL_INQUIRY_UK
+    assert "будівельних матеріалів" in FIXED_EMAIL_SUBJECT_UK
+    assert "MFG" not in FIXED_EMAIL_SUBJECT_UK
+    from ua_materialy_inquiry_email_uk import (
+        DEFAULT_INQUIRY_PHONE_UK,
+        DEFAULT_INQUIRY_SENDER_NAME_UK,
+        build_inquiry_signature_uk,
+        inquiry_phone,
+        inquiry_sender_name,
+    )
+
+    assert DEFAULT_INQUIRY_SENDER_NAME_UK == "Свінчак Максим"
+    assert DEFAULT_INQUIRY_PHONE_UK == "+380977091141"
+    assert inquiry_sender_name() in FIXED_MATERIAL_INQUIRY_UK
+    assert inquiry_phone() in build_inquiry_signature_uk()
+    assert FIXED_EMAIL_SUBJECT_UK.startswith("Запит")
+    assert choose_subject_variant("Test ТОВ") == FIXED_EMAIL_SUBJECT_UK
+    assert get_email_attachments_ua_materialy() == []
+    assert ENABLE_EMAIL_ATTACHMENT is False
+    assert UA_EMAIL_ALLOW_ATTACHMENTS is False
+    assert callable(send_email_ua_materialy)
+    assert ENABLE_CLAUDE_INQUIRY_EMAIL is True
+    body = _assemble_inquiry_email_body("Test ТОВ", "Короткий тест.")
+    assert body == FIXED_MATERIAL_INQUIRY_UK.strip()
+    from ua_claude_prompts import build_personalized_inquiry_email_prompt_uk
+
+    prompt = build_personalized_inquiry_email_prompt_uk(
+        company_name="Будматеріали Київ ТОВ",
+        website="https://budmat.ua",
+        oblast="Kyiv",
+        materials="цемент, пісок",
+        page_snippet="Оптовий склад будматеріалів у Києві",
+    )
+    assert "українською" in prompt.lower() or "українська" in prompt.lower()
+    assert "Будматеріали Київ ТОВ" in prompt
+    cleaned = sanitize_email_body(FIXED_MATERIAL_INQUIRY_UK)
     assert "\n\n" in cleaned
-    assert cleaned.count("\n\n") >= 5
-    assert "Sehr geehrte" in cleaned
-    assert "Mit freundlichen Grüßen" in cleaned
-    assert "Kurzer Test" not in body
-    assert is_germany_de_candidate("https://firma.de/kontakt", "GU Leipzig", "")
+    assert "Шановні" in cleaned
+    assert "З повагою" in cleaned
+    assert "Короткий тест" not in body
+    assert is_germany_de_candidate("https://firma.ua/kontakt", "Будматеріали Київ", "")
     from contact_extract_utils import parse_contact_extract_response
 
     parsed_contacts = parse_contact_extract_response(
@@ -6350,18 +6249,16 @@ def _run_smoke_tests() -> None:
     assert ENABLE_CLAUDE_DISCOVERY_TERMS is False
     assert ENABLE_REGION_PLZ_FILTER is False
     assert len(SERPER_DISCOVERY_TERMS) >= 20
-    from gu_bundesland_rotation import (
+    from ua_oblast_rotation import (
         BUNDESLAND_ROTATION_ORDER,
         peek_next_bundesland,
     )
 
-    assert len(BUNDESLAND_ROTATION_ORDER) == 16
+    assert len(BUNDESLAND_ROTATION_ORDER) == 25
     assert peek_next_bundesland() in BUNDESLAND_ROTATION_ORDER
-    from mfg_mail_recipients import merge_mfg_campaign_cc
+    from mail_transport import merge_mail_cc_recipients
 
-    assert "office@mfg-fliesen.de" not in [
-        a.lower() for a in merge_mfg_campaign_cc("kontakt@firma.de", "")
-    ]
+    assert merge_mail_cc_recipients("kontakt@firma.de", "") == []
     assert is_rejected_company_name_for_export(
         "[PDF] X öffentlich nichtöffentlich", "", "shop@pdf-xchange.de"
     )
@@ -6399,60 +6296,46 @@ def _run_smoke_tests() -> None:
         name="Baufirma SuS Bau",
     )
     assert is_valid_retail_store_builder_contact(
-        email="info@logmar.net",
-        url="https://www.logmar.net/",
-        name="Logmar Generalunternehmer GmbH",
-        text="Generalunternehmer Filialbau Aldi Rewe Referenzprojekte",
+        email="info@budmat.ua",
+        url="https://www.budmat.ua/",
+        name="Будматеріали Київ ТОВ",
+        text="Оптовий склад будматеріалів цемент пісок щебінь каталог ціни доставка",
     )
     assert not is_valid_retail_store_builder_contact(
-        email="info@ladenbau.de",
-        url="https://ladenbau.de",
-        name="HELIA Ladenbau GmbH",
-        text="Ladenbau Filialbau Neubau Gewerbe",
+        email="info@design.ua",
+        url="https://design.ua",
+        name="Дизайн інтер'єру",
+        text="Ремонт квартир під ключ дизайн інтер'єру",
     )
     assert is_valid_retail_store_builder_contact(
-        name="Bau GmbH",
-        text="Generalunternehmer Filialbau Supermarkt Neubau Einzelhandel",
-    )
-    assert is_valid_retail_store_builder_contact(
-        name="Weber Generalunternehmer GmbH",
-        text=(
-            "Generalunternehmer Filialumbau Marktmodernisierung Rewe Aldi. "
-            "Referenzprojekte und Portfolio."
-        ),
+        name="Склад будматеріалів",
+        url="https://budmat.ua",
+        email="info@budmat.ua",
+        text="Продаж цементу та піску оптом. Каталог товарів.",
     )
     assert not is_valid_retail_store_builder_contact(
-        name="Kultbau GmbH",
-        text="Altbausanierung Wohnhaus Erfurt ohne Einzelhandel",
-    )
-    assert not is_valid_retail_store_builder_contact(
-        url="https://www.kultbaugmbh.de/erfurt/bausanierung",
-        name="Kultbau GmbH",
-        text="Altbausanierung Bausanierung Erfurt",
-    )
-    assert not is_valid_retail_store_builder_contact(
-        url="https://www.rewe.de/shop",
-        name="REWE Markt",
-        text="Öffnungszeiten Prospekt Filialfinder",
+        url="https://www.olx.ua/ogloszenie",
+        name="OLX оголошення",
+        text="Продам б/у цеглу",
     )
     assert is_media_publisher_contact(
-        url="https://www.hi-heute.de/supermarkte_und_discounter",
-        name="hi-heute.de Verlag Business News",
-        email="redaktion@hi-heute.de",
+        url="https://www.news.ua/budivnytstvo",
+        name="news.ua",
+        email="redakcja@news.ua",
     )
     assert not is_loose_serper_discovery_candidate(
-        url="https://www.hi-heute.de/supermarkte_und_discounter",
-        name="hi-heute.de Verlag",
-        text="Netto Discounter Supermarkt Nachrichten",
+        url="https://www.news.ua/budivnytstvo",
+        name="news.ua",
+        text="Новини будівництва",
     )
-    from de_gu_keywords import (
+    from ua_oblast_keywords import (
         SERPER_DISCOVERY_BROAD_TERMS,
         SERPER_DISCOVERY_LANDKREIS_TERMS,
         SERPER_DISCOVERY_PLACES_TERMS,
         build_region_suffix,
     )
 
-    assert build_region_suffix(["Nordrhein-Westfalen"]) == "Deutschland"
+    assert build_region_suffix(["Kyiv"]) == "Україна"
     assert len(SERPER_DISCOVERY_BROAD_TERMS) >= 10
     assert len(SERPER_DISCOVERY_LANDKREIS_TERMS) >= 5
     assert len(SERPER_DISCOVERY_PLACES_TERMS) >= 5
@@ -6461,166 +6344,52 @@ def _run_smoke_tests() -> None:
     assert MIN_VERIFIED_CONTACTS_ROTATION == 20
     assert DISCOVERY_MIN_PENDING_GHA_FAIL == 5
     assert MAX_PAGES_FOR_RETAIL_VERIFICATION >= 8
-    from retail_store_builder_filter import is_serper_only_pending_candidate
+    from ua_materialy_supplier_filter import is_serper_only_pending_candidate
 
     assert is_serper_only_pending_candidate(
-        name="Weber Generalunternehmer GmbH",
-        url="https://weber-gu.de",
-        text="Generalunternehmer Filialbau Ulm Gewerbe Referenz Rewe",
+        name="Склад будматеріалів Львів",
+        url="https://budmat-lviv.ua",
+        text="будматеріали опт цемент пісок",
     )
     assert not is_serper_only_pending_candidate(
-        name="HELIA Ladenbau GmbH", url="https://helia-ladenbau.de", text="Ladenbau Ulm"
+        name="Дизайн студія", url="https://design.ua", text="дизайн інтер'єру"
     )
-    assert not is_serper_only_pending_candidate(
-        url="https://www.hi-heute.de/supermarkte", name="hi-heute.de", text="Nachrichten"
-    )
-    assert _is_small_ladenbau_specialist(
-        "Müller Generalunternehmer GmbH",
-        "https://mueller-ladenbau.de",
-        "Generalunternehmer für Ladenbau — Neubau und Umbau von Gewerbeobjekten.",
-    )
-    assert not _is_small_ladenbau_specialist(
-        "Müller-Ladenbau GmbH",
-        "https://mueller-ladenbau.de",
-        "Wir realisieren Neubau und Umbau von Gewerbeobjekten.",
-    )
-    assert not is_likely_large_company(
-        "Familienunternehmen Ladenbau",
-        "https://helia-ladenbau.de",
-        "Familienbetrieb regional tätig Bauunternehmen",
-    )[0]
-    assert is_unsuitable_inquiry_email("privacy@firma.de")
+    assert is_unsuitable_inquiry_email("privacy@firma.ua")
     best, sc = pick_best_email_for_inquiry(
-        ["datenschutz@obi.de", "info@logmar.net"],
-        "https://www.logmar.net/",
+        ["datenschutz@shop.ua", "info@budmat.ua"],
+        "https://www.budmat.ua/",
     )
-    assert best == "info@logmar.net" and sc >= MIN_EMAIL_SCORE_FOR_SEND
-    best_puny, sc_puny = pick_best_email_for_inquiry(
-        ["info@eichstaedtbau.de", "d@enschutzhinweisen.akzeptieren"],
-        "https://xn--bauunternehmen-eichstdt-g8b.de/neubau-edeka-in-halle/",
-    )
-    assert best_puny == "info@eichstaedtbau.de" and sc_puny >= MIN_EMAIL_SCORE_FOR_SEND
-    assert is_junk_scraped_email("d@enschutzhinweisen.akzeptieren")
-    assert is_junk_scraped_email("element.d@aset.rocketlazyload")
-    assert not is_junk_scraped_email("info@eichstaedtbau.de")
-    imp_first = sort_contact_urls_priority_pl(
-        ["https://firma.de/kontakt", "https://firma.de/impressum", "https://firma.de/datenschutz"]
-    )
-    assert _is_impressum_url(imp_first[0])
-    guessed = guess_impressum_urls("https://www.beispiel-bau.de/leistungen/")
-    assert any("/impressum" in u for u in guessed)
-    seen_ignore = build_discovery_seen_urls(
-        [{"url": "https://a.de"}], {"contacts": {"https://b.de": {}}}
-    )
-    assert "https://a.de" in seen_ignore and "https://b.de" not in seen_ignore
-    assert DISCOVERY_IGNORE_CONTACT_CACHE is True
-    assert EXPORT_PIPELINE_ROWS_WITHOUT_EMAIL is True
+    assert best == "info@budmat.ua" and sc >= MIN_EMAIL_SCORE_FOR_SEND
     assert is_row_eligible_for_excel_export(
         {
-            "nazwa": "Müller Generalunternehmer GmbH",
-            "url": "https://mueller-gu.de",
+            "nazwa": "Будматеріали Київ ТОВ",
+            "url": "https://budmat.ua",
             "email_target": "",
             "retail_verified": True,
             "is_gu": True,
-            "is_small_firm": True,
-            "gu_marker": "generalunternehmer",
-            "verification_reason": "referenz_ladenbau",
-            "page_snippet": "Generalunternehmer Referenzprojekte Aldi Filialbau",
-            "retail_chains_found": "aldi",
+            "gu_marker": "будматеріали",
+            "verification_reason": "claude_material_supplier",
+            "page_snippet": "Оптовий склад будматеріалів цемент пісок",
+            "retail_chains_found": "цемент",
         }
     )
     assert not is_row_eligible_for_excel_export(
         {
-            "nazwa": "Müller Ladenbau GmbH",
-            "url": "https://mueller-ladenbau.de",
+            "nazwa": "Дизайн інтер'єру",
+            "url": "https://design.ua",
             "email_target": "",
             "retail_verified": True,
-            "verification_reason": "referenz_ladenbau",
-            "page_snippet": "Referenzprojekte Aldi Filialbau",
+            "page_snippet": "Ремонт квартир",
         }
     )
-    rows_export = build_export_rows(
-        [
-            {
-                "nazwa": "Test Bau GmbH",
-                "company_name_clean": "Test Bau GmbH",
-                "url": "https://test-bau.de",
-                "www": "https://test-bau.de",
-                "email_target": "",
-                "retail_verified": True,
-                "is_gu": True,
-                "is_small_firm": True,
-                "gu_marker": "generalunternehmer",
-                "verification_reason": "referenz_filialbau",
-                "page_snippet": "Generalunternehmer Filialbau Referenzprojekte Aldi Supermarkt",
-                "retail_chains_found": "aldi",
-            }
-        ]
-    )
-    assert len(rows_export) == 1 and rows_export[0].get("E-mail") == ""
-    ok_laden_only, chains_laden_only, reason_laden_only = page_mentions_retail_store_projects(
-        "Wir realisieren Aldi und Rewe Filialneubau im Ladenbau in Sachsen. Referenzen."
-    )
-    assert ok_laden_only and "aldi" in chains_laden_only
-    assert reason_laden_only.startswith("filialbau") or reason_laden_only.startswith("kette_")
-    ok, chains, _ = page_mentions_retail_store_projects(
-        "Generalunternehmer: Wir realisieren Aldi und Rewe Filialneubau im Ladenbau in Sachsen. Referenzen."
-    )
-    assert ok and "aldi" in chains
-    ok_hb, chains_hb, _ = page_mentions_retail_store_projects(
-        "Generalunternehmer Hochbau: Aldi-Filialgebäude und Kaufland-Neubau in Sachsen. Referenzprojekte."
-    )
-    assert ok_hb and "aldi" in chains_hb
-    ok_ohne, _, reason_ohne = page_mentions_retail_store_projects(
-        "Generalunternehmer Filialbau Supermarkt Neubau. "
-        "Wir bauen Discounter im Einzelhandel."
-    )
-    assert not ok_ohne and reason_ohne == "kein_markt_nachweis"
-    ok_opis, _, reason_opis = page_mentions_retail_store_projects(
-        "Generalunternehmer Filialbau. Wir realisieren Neubau Aldi Supermarkt "
-        "für Discounter — Projektbeschreibung mit Details."
-    )
-    assert ok_opis and (
-        reason_opis == "markt_referenz_nachweis"
-        or reason_opis.startswith("referenz")
-        or reason_opis.startswith("kette_")
-    )
-    ok_nur_ref, _, reason_nur = page_mentions_retail_store_projects(
-        "Generalunternehmer Filialbau. Referenzen Hallenbau und Bürobau — keine Supermarktprojekte."
-    )
-    assert not ok_nur_ref and reason_nur == "kein_markt_nachweis"
-    ok_foto, chains_foto, reason_foto = page_mentions_retail_store_projects(
-        "Generalunternehmer Filialbau Sachsen. Fotogalerie — Rewe Markt Neubau Cottbus, "
-        "Bilder Supermarkt Umbau. alt-kaufland-filiale.jpg"
-    )
-    assert ok_foto and "rewe" in chains_foto
-    assert "referenz" in reason_foto or "kette" in reason_foto
-    ok_ref, chains_ref, reason_ref = page_mentions_retail_store_projects(
-        "Generalunternehmer Filialbau. Referenzprojekte Aldi und Rewe. Unsere Projekte."
-    )
-    assert ok_ref and "referenz" in reason_ref
-    assert "aldi" in chains_ref
-    ok_shop, _, reason_shop = page_mentions_retail_store_projects(
-        "REWE Markt Erfurt — Öffnungszeiten und Wochenangebot. Filialfinder."
-    )
-    assert not ok_shop and reason_shop == "einzelhandel_betrieb_kein_bau"
-    assert "schlüsselfertig" in RETAIL_BUILD_KEYWORDS
-    assert len(SERPER_DISCOVERY_TERMS) >= 500
-    assert "ladeneinrichtung" in SERPER_NEGATIVE_TERMS
-    assert "11880.com" in SERPER_BAD_DOMAINS
+    assert len(SERPER_DISCOVERY_TERMS) >= 100
+    assert "новини" in SERPER_NEGATIVE_TERMS
+    assert SERPER_COUNTRY == "ua"
+    assert COUNTRY_RESTRICTION == "UA"
     from http_page_guard import is_waf_blocked
 
     assert is_waf_blocked(exc=Exception("522 ServerError for url"))
-    assert is_waf_blocked(
-        html="<html><title>Just a moment...</title>cdn-cgi/challenge</html>"
-    )
-    assert not is_waf_blocked(html="<html><body>Normalna firma budowlana GmbH</body></html>")
-    assert is_likely_large_company("STRABAG SE", "https://www.strabag.com", "")[0]
-    assert not is_likely_large_company(
-        "Müller Ladenbau GmbH",
-        "https://mueller-ladenbau.de",
-        "Familienunternehmen Referenz Aldi Filialbau regional",
-    )[0]
+    assert not is_waf_blocked(html="<html><body>Будматеріали ТОВ Київ</body></html>")
     print("_run_smoke_tests: OK")
 
 
@@ -6698,7 +6467,7 @@ if __name__ == "__main__":
                 reverify_all=reverify_all,
             )
             persist_progress(all_rows, cache, logger, reason="verify_pending_contacts")
-            from gu_bundesland_rotation import (
+            from ua_oblast_rotation import (
                 commit_rotation_after_run,
                 load_rotation_state,
                 peek_next_bundesland,
@@ -6758,20 +6527,20 @@ if __name__ == "__main__":
                 "[TRYB] Discovery respektuje contacts JSON (pomija znane URL, "
                 "bez ponownego www)."
             )
-        if "--bundesland" in sys.argv:
-            i = sys.argv.index("--bundesland")
+        if "--oblast" in sys.argv or "--bundesland" in sys.argv:
+            i = sys.argv.index("--oblast") if "--oblast" in sys.argv else sys.argv.index("--bundesland")
             if i + 1 < len(sys.argv):
                 bl = sys.argv[i + 1].split(",")
                 configure_campaign_bundeslaender(sys.modules[__name__], bl)
-                print(f"[TRYB] Aktywne Bundesländer: {', '.join(CAMPAIGN_ACTIVE_BUNDESLAENDER)}")
+                print(f"[TRYB] Aktywne obwody: {', '.join(CAMPAIGN_ACTIVE_BUNDESLAENDER)}")
         if "--rotation-status" in sys.argv:
-            from gu_bundesland_rotation import format_rotation_status
+            from ua_oblast_rotation import format_rotation_status
 
             print(format_rotation_status(OUTPUT_DIR))
             raise SystemExit(0)
-        rotate_bl = "--rotate-bundesland" in sys.argv
+        rotate_bl = "--rotate-oblast" in sys.argv
         if rotate_bl:
-            extra_kw["rotate_bundesland"] = True
+            extra_kw["rotate_oblast"] = True
             if "--with-auto-email" in sys.argv:
                 extra_kw["enable_auto_email"] = True
             print("[TRYB] Rotacja Bundesland: 1 land na cykl discovery.")
@@ -6791,7 +6560,7 @@ if __name__ == "__main__":
             apply_run_config_file(mod, Path(rc_path), Path(__file__).resolve().parent)
             try:
                 with open(Path(rc_path), encoding="utf-8") as _rcf:
-                    apply_gu_run_config_extras(mod, json.load(_rcf))
+                    apply_ua_run_config_extras(mod, json.load(_rcf))
             except Exception:
                 pass
             launch_kw = run_scraper_launch_kwargs(mod)

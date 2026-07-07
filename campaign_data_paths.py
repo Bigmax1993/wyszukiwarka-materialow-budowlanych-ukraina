@@ -20,11 +20,17 @@ GOOGLE_DRIVE_GU_FOLDER_URL = (
 )
 
 # Nazwy podfolderów szukane pod „Google Drive” / „Dyski współdzielone”
-_DRIVE_FOLDER_NAMES = (
+_DRIVE_FOLDER_NAMES_GU = (
     "GU Bauunternehmen Wyniki",
     "Kanbud GU Wyniki",
     "de_gu_wyniki",
 )
+_DRIVE_FOLDER_NAMES_UA = (
+    "UA Materialy Budowlane Wyniki",
+    "Kanbud UA Materialy Wyniki",
+    "ua_materialy_wyniki",
+)
+_DRIVE_FOLDER_NAMES = _DRIVE_FOLDER_NAMES_GU
 
 
 def _google_drive_bases() -> list[Path]:
@@ -45,11 +51,12 @@ def _google_drive_bases() -> list[Path]:
     return bases
 
 
-def resolve_data_root(campaign_dir: Path) -> Path:
+def resolve_data_root(campaign_dir: Path, *, campaign: str = "gu") -> Path:
     """
     Katalog danych kampanii: Wyniki/, wyslane/.
-    Priorytet: KANBUD_DATA_DIR → KANBUD_GOOGLE_DRIVE_GU_PATH → znany podfolder Drive → folder kampanii.
+    campaign: gu | ua
     """
+    folder_names = _DRIVE_FOLDER_NAMES_UA if campaign == "ua" else _DRIVE_FOLDER_NAMES_GU
     for key in ("KANBUD_DATA_DIR", "KANBUD_GOOGLE_DRIVE_GU_PATH", "KANBUD_GOOGLE_DRIVE_PATH"):
         raw = (os.environ.get(key) or "").strip()
         if raw:
@@ -60,7 +67,7 @@ def resolve_data_root(campaign_dir: Path) -> Path:
     for base in _google_drive_bases():
         if not base.is_dir():
             continue
-        for name in _DRIVE_FOLDER_NAMES:
+        for name in folder_names:
             candidate = (base / name).resolve()
             if candidate.is_dir():
                 return candidate
@@ -91,9 +98,10 @@ def apply_data_root_to_env(data_root: Path) -> Path:
 
 def campaign_output_paths(campaign_dir: Path, basename: str) -> dict[str, Path]:
     """
-    basename np. de_gu_bauunternehmen → pliki w Wyniki/.
+    basename np. de_gu_bauunternehmen lub ua_materialy → pliki w Wyniki/.
     """
-    root = apply_data_root_to_env(resolve_data_root(campaign_dir))
+    campaign = "ua" if basename.startswith("ua_") else "gu"
+    root = apply_data_root_to_env(resolve_data_root(campaign_dir, campaign=campaign))
     out = wyniki_dir(root)
     return {
         "data_root": root,
