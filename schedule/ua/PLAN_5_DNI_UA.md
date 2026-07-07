@@ -3,6 +3,20 @@
 Kampania **UA materiały budowlane** (`ua_materialy_scraper.py`, `run_config/ua_materialy.json`).
 Wysyłka **pon 09:00** + **wt 09:00** (2×300 maili/dzień). **Bez załączników PPTX.**
 
+## Rotacja obwodów (od 2026-07-13)
+
+Discovery (`--rotate-oblast`) skanuje **1 obwód na tydzień** (kolejność: Kyiv → Lvivska → … → Luhanska, 25 tygodni).
+
+| Okres | Zachowanie |
+|-------|------------|
+| **Do 12.07.2026** | `--rotate-oblast` włączone, ale **bez zawężenia** — discovery po **wszystkich 25 obwodach** (bieżący tydzień) |
+| **Od 13.07.2026** (pon 17:00) | Pierwszy tydzień z rotacją — obwód **Kyiv** |
+| **Niedziela backfill** | Przesunięcie rotacji dopiero po ≥20 verified/pending w aktywnym obwodzie |
+
+Kolumna Excel: **Obwód** (import nadal akceptuje starą nazwę „Oblast”).
+
+Stan rotacji: `Wyniki/ua_materialy_oblast_rotation.json`. Status: `python ua_materialy_scraper.py --rotation-status`.
+
 ## Cykl tygodniowy
 
 ```

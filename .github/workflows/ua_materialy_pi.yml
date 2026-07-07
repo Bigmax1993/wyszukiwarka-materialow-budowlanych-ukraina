@@ -120,7 +120,7 @@ jobs:
 
       - name: Discovery (serper-only, pon-pt)
         run: |
-          ARGS="--run-config run_config/ua_materialy.json --serper-only-discovery --no-auto-email"
+          ARGS="--run-config run_config/ua_materialy.json --serper-only-discovery --no-auto-email --rotate-oblast"
           if [ "${{ steps.prev_run.outputs.resume }}" = "1" ]; then
             ARGS="$ARGS --respect-cache"
           fi

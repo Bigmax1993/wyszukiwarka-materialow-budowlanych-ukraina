@@ -3,15 +3,19 @@
 Rotacja obwodów UA — jeden obwód na cykl discovery (np. piątek).
 
 Stan: Wyniki/ua_materialy_oblast_rotation.json
+Start rotacji: domyślnie 2026-07-13 (env UA_OBLAST_ROTATION_START).
 """
 from __future__ import annotations
 
 import json
+import os
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from ua_oblast_keywords import OBLAST_CONFIG, configure_campaign_oblasts
+
+DEFAULT_ROTATION_START = date(2026, 7, 13)
 
 # Duże rynki → mniejsze obwody
 OBLAST_ROTATION_ORDER: tuple[str, ...] = (
@@ -45,6 +49,18 @@ BUNDESLAND_ROTATION_ORDER = OBLAST_ROTATION_ORDER
 
 STATE_FILENAME = "ua_materialy_oblast_rotation.json"
 DEFAULT_MIN_CONTACTS_SINGLE_OBLAST = 20
+
+
+def get_rotation_start_date() -> date:
+    raw = (os.environ.get("UA_OBLAST_ROTATION_START") or "").strip()
+    if not raw:
+        return DEFAULT_ROTATION_START
+    return date.fromisoformat(raw)
+
+
+def rotation_is_active(as_of: date | None = None) -> bool:
+    """False przed startem rotacji — discovery może iść po całej UA."""
+    return (as_of or date.today()) >= get_rotation_start_date()
 
 
 def rotation_state_path(wyniki_dir: Path) -> Path:
@@ -129,6 +145,13 @@ def commit_rotation_after_run(
 def format_rotation_status(wyniki_dir: Path) -> str:
     state_path = rotation_state_path(wyniki_dir)
     state = load_rotation_state(state_path)
+    start = get_rotation_start_date()
+    if not rotation_is_active():
+        return (
+            f"Rotacja obwodów od {start.isoformat()} — "
+            f"teraz tryb cała Ukraina (bez rotacji). "
+            f"Następny obwód po starcie: {OBLAST_ROTATION_ORDER[0]}"
+        )
     current = peek_next_oblast(state)
     nxt_idx = int(state.get("next_index", 0))
     nxt = OBLAST_ROTATION_ORDER[(nxt_idx + 1) % len(OBLAST_ROTATION_ORDER)]

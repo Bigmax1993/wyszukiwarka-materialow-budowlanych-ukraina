@@ -113,6 +113,11 @@ def apply_ua_run_config_extras(module, data: dict) -> None:
         rsf = getattr(module, "_retail_store_builder_filter", None)
         if rsf is not None:
             rsf.REQUIRE_GENERALUNTERNEHMER = bool(data["require_generalunternehmer"])
+    if data.get("rotation_start_date"):
+        os.environ.setdefault(
+            "UA_OBLAST_ROTATION_START",
+            str(data["rotation_start_date"]).strip(),
+        )
     _int_keys = (
         ("serper_daily_limit", "SERPER_DAILY_LIMIT"),
         ("claude_discovery_max_rounds", "CLAUDE_DISCOVERY_MAX_ROUNDS"),
@@ -422,7 +427,7 @@ SUPPRESSED_EMAIL_LOCALPARTS = {
 EXPORT_COLUMNS = [
     "Firmenname",
     "Adresse",
-    "Oblast",
+    "Obwód",
     "Telefon",
     "E-Mail",
     "Webseite",
@@ -1252,7 +1257,7 @@ def row_to_excel_kontakte_columns(row: dict, email: str = "") -> dict:
     return {
         "Nazwa firmy": (row.get("company_name_clean") or row.get("nazwa") or "").strip(),
         "Adres": (row.get("adres") or row.get("full_address") or "").strip(),
-        "Oblast": (row.get("bundesland") or "").strip(),
+        "Obwód": (row.get("bundesland") or row.get("discovery_bundesland") or "").strip(),
         "Telefon": (row.get("telefon") or "").strip(),
         "E-mail": mail,
         "Strona www": website,
@@ -1266,7 +1271,7 @@ def row_to_excel_wojewodztwa_columns(row: dict) -> dict:
     row = finalize_row_for_excel_tables(dict(row))
     return {
         "Nazwa firmy": (row.get("company_name_clean") or row.get("nazwa") or "").strip(),
-        "Oblast": (row.get("bundesland") or "").strip(),
+        "Obwód": (row.get("bundesland") or row.get("discovery_bundesland") or "").strip(),
         "Adres": (row.get("adres") or row.get("full_address") or "").strip(),
         "Strona www": (row.get("official_website") or row.get("www") or "").strip(),
         "URL": (row.get("url") or "").strip(),
@@ -1526,7 +1531,7 @@ def build_bundesland_rows(rows):
         row_url = (table.get("URL") or "").strip()
         if row_name.lower() == "nieznana firma" and not row_url:
             continue
-        row_state = (table.get("Oblast") or "").strip()
+        row_state = (table.get("Obwód") or "").strip()
         row_address = (table.get("Adres") or "").strip()
         dedupe_key = row_url or f"{row_name}|{row_state}|{row_address}"
         if dedupe_key in seen:
@@ -1548,6 +1553,7 @@ def persist_progress(all_rows, cache, logger: logging.Logger, reason: str = "") 
 EXCEL_IMPORT_COLUMNS = {
     "Nazwa firmy": "nazwa",
     "Adres": "adres",
+    "Obwód": "bundesland",
     "Oblast": "bundesland",
     "Telefon": "telefon",
     "E-mail": "email_target",
@@ -5745,6 +5751,10 @@ def run_scraper(
     if enable_auto_email is None:
         enable_auto_email = ENABLE_AUTO_EMAIL
     rotate_mode = bool(rotate_oblast and discovery_mode != "emails_only")
+    from ua_oblast_rotation import rotation_is_active
+
+    if rotate_oblast and discovery_mode != "emails_only":
+        rotate_mode = rotate_mode and rotation_is_active()
     serper_only = discovery_mode == "serper_only"
     if serper_only and discovery_mode != "emails_only":
         console_step(
@@ -5777,17 +5787,26 @@ def run_scraper(
             apply_rotation_to_module,
             commit_rotation_after_run,
             format_rotation_status,
+            get_rotation_start_date,
+            rotation_is_active,
         )
 
-        mod = sys.modules[__name__]
-        rotation_land, rotation_state, rotation_state_path = apply_rotation_to_module(
-            mod, OUTPUT_DIR
-        )
-        print(
-            f"[ROTACJA] Discovery dla Bundesland: {rotation_land} "
-            f"(1 land / cykl, min. nowych firm={MIN_CONTACTS_TARGET})"
-        )
-        print(f"[ROTACJA] {format_rotation_status(OUTPUT_DIR)}")
+        if rotation_is_active():
+            mod = sys.modules[__name__]
+            rotation_land, rotation_state, rotation_state_path = apply_rotation_to_module(
+                mod, OUTPUT_DIR
+            )
+            print(
+                f"[ROTACJA] Discovery dla obwodu: {rotation_land} "
+                f"(1 obwód / cykl, min. nowych firm={MIN_CONTACTS_TARGET})"
+            )
+            print(f"[ROTACJA] {format_rotation_status(OUTPUT_DIR)}")
+        else:
+            print(
+                f"[ROTACJA] Włączenie od {get_rotation_start_date().isoformat()} — "
+                f"teraz discovery dla wszystkich "
+                f"{len(CAMPAIGN_ACTIVE_BUNDESLAENDER)} obwodów."
+            )
 
     logger.info("=== START UA materiały budowlane — hurtownie / składy (Serper API) ===")
     start_scraper_runtime_clock()
@@ -6105,6 +6124,7 @@ def run_scraper(
         and rotation_state_path is not None
         and discovery_mode != "emails_only"
         and not serper_only
+        and rotation_is_active()
     ):
         from ua_oblast_rotation import commit_rotation_after_run
 
@@ -6471,6 +6491,7 @@ if __name__ == "__main__":
                 commit_rotation_after_run,
                 load_rotation_state,
                 peek_next_bundesland,
+                rotation_is_active,
                 rotation_state_path,
             )
 
@@ -6483,14 +6504,17 @@ if __name__ == "__main__":
                 f"[ROTACJA] verified={verified_n}, pending={pending_n} "
                 f"(cel {MIN_VERIFIED_CONTACTS_ROTATION}) dla {current_land}"
             )
-            if (
+            if rotation_is_active() and (
                 verified_n >= MIN_VERIFIED_CONTACTS_ROTATION
                 or pending_n >= MIN_VERIFIED_CONTACTS_ROTATION
             ):
                 nxt = commit_rotation_after_run(rot_path, rot_state, current_land)
                 rot_msg += f" — przesunięto rotację, następny land: {nxt}"
             else:
-                rot_msg += " — land bez przesunięcia"
+                if not rotation_is_active():
+                    rot_msg += " — rotacja jeszcze nieaktywna (przed datą startu)"
+                else:
+                    rot_msg += " — land bez przesunięcia"
             print(
                 f"[VERIFY] urls={stats['pending']}, verified={stats['verified']}, "
                 f"rejected={stats['rejected']}, errors={stats['errors']}, "

@@ -49,5 +49,7 @@
   "claude_daily_limit": 3000,
   "claude_discovery_reserve": 1000,
   "claude_discovery_min_gain": 1,
-  "claude_discovery_cache_days": 7
+  "claude_discovery_cache_days": 7,
+  "rotate_oblast": true,
+  "rotation_start_date": "2026-07-13"
 }

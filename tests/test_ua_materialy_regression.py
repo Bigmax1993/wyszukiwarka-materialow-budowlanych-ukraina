@@ -11,7 +11,7 @@ import logging
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -47,8 +47,10 @@ from ua_materialy_supplier_filter import (
 from ua_oblast_rotation import (
     OBLAST_ROTATION_ORDER,
     commit_rotation_after_run,
+    get_rotation_start_date,
     load_rotation_state,
     peek_next_oblast,
+    rotation_is_active,
     rotation_state_path,
 )
 
@@ -255,6 +257,20 @@ class OblastRotationRegression(unittest.TestCase):
     def test_rotation_order_length(self):
         self.assertEqual(len(OBLAST_ROTATION_ORDER), 25)
         self.assertEqual(peek_next_oblast(), OBLAST_ROTATION_ORDER[0])
+
+    def test_rotation_start_date_default(self):
+        self.assertEqual(get_rotation_start_date().isoformat(), "2026-07-13")
+
+    def test_rotation_inactive_before_start(self):
+        self.assertFalse(rotation_is_active(date(2026, 7, 12)))
+        self.assertTrue(rotation_is_active(date(2026, 7, 13)))
+
+    def test_excel_obwod_column(self):
+        row = {"company_name_clean": "ТОВ Тест", "bundesland": "Kyiv", "telefon": "+380"}
+        cols = scraper.row_to_excel_kontakte_columns(row)
+        self.assertIn("Obwód", cols)
+        self.assertEqual(cols["Obwód"], "Kyiv")
+        self.assertNotIn("Oblast", cols)
 
     def test_commit_advances_index(self):
         tmp = Path(tempfile.mkdtemp())
