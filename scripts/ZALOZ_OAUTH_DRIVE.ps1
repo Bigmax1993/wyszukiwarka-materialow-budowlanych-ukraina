@@ -10,7 +10,7 @@ $Secrets = Join-Path $Root "secrets"
 $ClientPath = Join-Path $Secrets "gdrive-oauth-client.json"
 New-Item -ItemType Directory -Force -Path $Secrets | Out-Null
 
-Write-Host "=== OAuth Drive — setup (repo: $Root) ===" -ForegroundColor Cyan
+Write-Host "=== OAuth Drive - setup (repo: $Root) ===" -ForegroundColor Cyan
 
 # 1) Szukaj OAuth client JSON w Pobranych (NIE plik service_account)
 $dl = Join-Path $env:USERPROFILE "Downloads"
@@ -57,7 +57,7 @@ if (Test-Path $ClientPath) {
     Copy-Item $oauthJson.FullName $ClientPath -Force
     Write-Host "Skopiowano OAuth client z $($oauthJson.FullName)" -ForegroundColor Green
 } else {
-    Write-Host "Timeout — zapisz JSON jako $ClientPath i uruchom ponownie." -ForegroundColor Red
+    Write-Host "Timeout - zapisz JSON jako $ClientPath i uruchom ponownie." -ForegroundColor Red
     exit 1
 }
 
@@ -65,7 +65,7 @@ Write-Host "Instalacja pakietow..." -ForegroundColor Cyan
 python -m pip install -q -r requirements-drive.txt
 
 Write-Host "Logowanie Google (otworzy sie przegladarka)..." -ForegroundColor Cyan
-python scripts\gdrive_oauth_setup.py --client-json $ClientPath
+python scripts\gdrive_oauth_setup.py --client-json $ClientPath --repo Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Setup OAuth nie powiodl sie (kod $LASTEXITCODE)." -ForegroundColor Red
@@ -73,4 +73,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "GOTOWE. Sprawdz: https://github.com/Bigmax1993/Wyszukiwarka-partnerow/actions" -ForegroundColor Green
+Write-Host "GOTOWE. Sprawdz: https://github.com/Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina/actions" -ForegroundColor Green
