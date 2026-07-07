@@ -11,6 +11,8 @@ LIBS = ROOT / "libs"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+if str(LIBS) not in sys.path:
+    sys.path.insert(0, str(LIBS))
 
 os.environ.setdefault("KANBUD_PROJECT_ROOT", str(LIBS))
 os.environ.setdefault("PYTHONUTF8", "1")
