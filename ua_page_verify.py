@@ -12,6 +12,7 @@ from ua_materialy_supplier_filter import (
     detect_required_retail_chains,
     has_market_project_evidence_on_website,
     has_store_shell_build_evidence,
+    has_wholesale_evidence,
     is_excluded_non_gu_role,
     is_generalunternehmer,
     is_interior_fitout_specialist,
@@ -119,6 +120,12 @@ def apply_page_verdict(
         supplier_json = bool(llm.get("matched_gu_keywords"))
         if not supplier_text and not supplier_json and not supplier_ok:
             return False, "kein_material_lieferant", llm.get("matched_chains") or []
+
+        # Tylko hurtownie (opt/gurt) — odrzuc suto detaliczne sklepy.
+        wholesale_text, _ = has_wholesale_evidence(blob)
+        wholesale_json = bool(llm.get("has_retail_context"))
+        if not wholesale_text and not wholesale_json:
+            return False, "kein_grosshandel", llm.get("matched_chains") or []
 
     has_materials = bool(llm.get("has_retail_context")) or has_market_project_evidence_on_website(
         blob

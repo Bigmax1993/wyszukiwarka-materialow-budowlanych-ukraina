@@ -34,6 +34,12 @@ STRICT_GU_MARKERS = (
     "будівельні матеріали",
     "оптом",
     "оптовий",
+    "оптова база",
+    "оптова торгівля",
+    "гурт",
+    "гуртовий",
+    "гуртові ціни",
+    "b2b",
     "склад",
     "постачальник",
     "дистриб'ютор",
@@ -41,6 +47,24 @@ STRICT_GU_MARKERS = (
     "будмаркет",
     "будівельна база",
     "будівельний магазин",
+)
+
+# Hurt (opt/gurt): dowód, że firma sprzedaje hurtowo, a nie tylko detalicznie.
+WHOLESALE_MARKERS = (
+    "опт",
+    "оптом",
+    "оптов",
+    "гурт",
+    "гуртов",
+    "оптова база",
+    "оптовий склад",
+    "оптова торгівля",
+    "оптові ціни",
+    "гуртові ціни",
+    "дилерськ",
+    "дилерські ціни",
+    "b2b",
+    "постачання зі складу",
 )
 
 NON_GU_ROLE_EXCLUSION_MARKERS = (
@@ -179,6 +203,15 @@ def is_generalunternehmer(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+def has_wholesale_evidence(text: str) -> tuple[bool, str]:
+    """Czy tekst wskazuje na sprzedaz hurtowa (opt/gurt), a nie tylko detal."""
+    low = (text or "").lower()
+    for m in WHOLESALE_MARKERS:
+        if m in low:
+            return True, m
+    return False, ""
+
+
 def qualifies_as_gu_for_campaign(text: str) -> tuple[bool, str]:
     low = (text or "").lower()
     if is_excluded_non_gu_role(low):
@@ -191,7 +224,10 @@ def qualifies_as_gu_for_campaign(text: str) -> tuple[bool, str]:
     )
     if not has_material:
         return False, "kein_materialkontext"
-    return True, marker or "lieferant"
+    wholesale, wholesale_marker = has_wholesale_evidence(low)
+    if not wholesale:
+        return False, "kein_grosshandel"
+    return True, wholesale_marker or marker or "grosshandel"
 
 
 def is_gu_or_retail_build_specialist(text: str) -> bool:

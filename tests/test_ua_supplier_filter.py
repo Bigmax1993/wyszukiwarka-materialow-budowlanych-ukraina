@@ -32,7 +32,16 @@ def test_loose_discovery_budmarket():
 def test_valid_contact_email():
     assert is_valid_retail_store_builder_contact(
         name="Будбаза",
-        text="Постачальник цементу",
+        text="Оптовий постачальник цементу, гуртові ціни",
         email="info@budbaza.ua",
         url="https://budbaza.ua",
     )
+
+
+def test_rejects_retail_only_without_wholesale():
+    """Suto detaliczny sklep budmateriaow (bez opt/gurt) jest odrzucany."""
+    ok, reason = qualifies_as_gu_for_campaign(
+        "Будівельний магазин — цемент, пісок у роздріб для дому"
+    )
+    assert not ok
+    assert reason == "kein_grosshandel"
