@@ -1,6 +1,7 @@
 name: PL poniedzialek prep
 
 # Kampania PL — prep poniedzialek
+# Aktywny pipeline PL na GitHub Actions
 on:
   schedule:
     - cron: "0 12 * * 1"

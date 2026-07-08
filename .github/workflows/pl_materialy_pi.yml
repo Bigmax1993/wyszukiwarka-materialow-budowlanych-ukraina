@@ -1,6 +1,7 @@
 name: PL discovery
 
 # Kampania PL — harmonogram jak DE GU (pon-pt discovery)
+# Aktywny pipeline PL na GitHub Actions
 on:
   schedule:
     - cron: "0 22 * * 1"

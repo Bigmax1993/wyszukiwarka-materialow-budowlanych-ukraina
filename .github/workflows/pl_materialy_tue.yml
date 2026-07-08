@@ -1,6 +1,7 @@
 name: PL poniedzialek send
 
 # Kampania PL — wysylka poniedzialek
+# Aktywny pipeline PL na GitHub Actions
 on:
   schedule:
     - cron: "0 14 * * 1"

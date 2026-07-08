@@ -1,6 +1,7 @@
 name: Sync wyniki Google Drive PL
 
 # Kampania PL — sync Drive poniedzialek
+# Aktywny pipeline PL na GitHub Actions
 on:
   workflow_dispatch:
     inputs:
