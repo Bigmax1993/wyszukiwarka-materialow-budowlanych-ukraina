@@ -49,7 +49,16 @@ Test-Step "regresja UA materialy" {
 }
 
 Test-Step "pytest UA (jednostkowe + integracyjne)" {
-    python -m pytest tests/test_ua_oblast_keywords.py tests/test_ua_inquiry_email_uk.py tests/test_ua_claude_inquiry_email.py tests/test_ua_supplier_filter.py tests/test_ua_materialy_integration.py -q
+    python -m pytest `
+        tests/test_ua_oblast_keywords.py `
+        tests/test_ua_inquiry_email_uk.py `
+        tests/test_ua_claude_inquiry_email.py `
+        tests/test_ua_supplier_filter.py `
+        tests/test_ua_materialy_integration.py `
+        tests/test_ua_email_targeting.py `
+        tests/test_ua_claude_contact_extract.py `
+        tests/test_ua_contact_pipeline_integration.py `
+        -q
 }
 
 Test-Step "ua_oblast_rotation" {

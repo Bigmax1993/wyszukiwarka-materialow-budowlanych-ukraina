@@ -253,6 +253,49 @@ class EmailBrandingRegression(unittest.TestCase):
         self.assertNotIn("1522", body)
 
 
+class EmailPickRegression(unittest.TestCase):
+    """Regresja: scoring UA + pick (przypadki z discovery 2026-07-09)."""
+
+    def test_gmail_from_venbud_accepted(self):
+        target, score, _ = scraper.pick_email_with_impressum_priority(
+            ["venbud.dealer@gmail.com"], [], "https://venbud.ua"
+        )
+        self.assertEqual(target, "venbud.dealer@gmail.com")
+        self.assertGreaterEqual(score, scraper.MIN_EMAIL_SCORE_FOR_SEND)
+
+    def test_gmail_from_wikibud_prefers_branded(self):
+        target, score, _ = scraper.pick_email_with_impressum_priority(
+            ["wikibud7@gmail.com", "d2535090@gmail.com"],
+            [],
+            "https://wikibud.com.ua",
+        )
+        self.assertEqual(target, "wikibud7@gmail.com")
+        self.assertGreaterEqual(score, scraper.MIN_EMAIL_SCORE_FOR_SEND)
+
+    def test_ukr_net_from_bud_platforma_accepted(self):
+        target, score, _ = scraper.pick_email_with_impressum_priority(
+            ["bud-platforma@ukr.net"], [], "https://bud-platforma.com.ua"
+        )
+        self.assertEqual(target, "bud-platforma@ukr.net")
+        self.assertGreaterEqual(score, scraper.MIN_EMAIL_SCORE_FOR_SEND)
+
+    def test_unrelated_gmail_still_rejected(self):
+        target, score, _ = scraper.pick_email_with_impressum_priority(
+            ["random.person@gmail.com"], [], "https://venbud.ua"
+        )
+        self.assertEqual(target, "")
+        self.assertLess(score, scraper.MIN_EMAIL_SCORE_FOR_SEND)
+
+    def test_claude_contact_uses_polish_prompt_module(self):
+        from ua_claude_prompts import build_contact_extract_prompt_pl
+
+        prompt = build_contact_extract_prompt_pl(
+            "Test", "https://test.ua", "tekst", regex_candidates=["a@b.ua"]
+        )
+        self.assertIn("Jesteś analitykiem", prompt)
+        self.assertNotIn("Generalunternehmer in Deutschland", prompt)
+
+
 class OblastRotationRegression(unittest.TestCase):
     def test_rotation_order_length(self):
         self.assertEqual(len(OBLAST_ROTATION_ORDER), 25)

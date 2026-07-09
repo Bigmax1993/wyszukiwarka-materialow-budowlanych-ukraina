@@ -90,6 +90,108 @@ def prioritize_page_text_for_verify(
     return merged[: max_chars - 3] + "..."
 
 
+def build_contact_extract_prompt_pl(
+    company_name: str,
+    website: str,
+    page_text: str,
+    *,
+    regex_candidates: list[str] | None = None,
+    impressum_candidates: list[str] | None = None,
+    regex_phones: list[str] | None = None,
+    extra_context: str = "",
+) -> str:
+    """
+    Prompt PL dla ekstrakcji kontaktów UA (hurtownie budowlane).
+    Uwzględnia kandydatów z regex, gdy scoring ich nie wybrał.
+    """
+    from claude_page_text import build_claude_context_header, extract_crawl_section_urls
+
+    raw = page_text or ""
+    header = build_claude_context_header(
+        company_name,
+        website,
+        pages_crawled=max(raw.count("=== http"), 1 if raw else 0),
+        priority_urls=extract_crawl_section_urls(raw),
+    )
+    snippet = prioritize_page_text_for_verify(
+        raw,
+        max_chars=CONTACT_EXTRACT_MAX_CHARS,
+        priority_keywords=_CONTACT_EXTRACT_TEXT_PRIORITY,
+    )
+    regex_lines = [
+        e.strip()
+        for e in (regex_candidates or [])
+        if (e or "").strip() and "@" in e
+    ]
+    impressum_lines = [
+        e.strip()
+        for e in (impressum_candidates or [])
+        if (e or "").strip() and "@" in e
+    ]
+    phone_lines = [p.strip() for p in (regex_phones or []) if (p or "").strip()]
+    regex_block = (
+        "\n".join(f"- {e}" for e in regex_lines)
+        if regex_lines
+        else "(brak — szukaj wyłącznie w tekście strony)"
+    )
+    impressum_block = (
+        "\n".join(f"- {e}" for e in impressum_lines)
+        if impressum_lines
+        else "(brak)"
+    )
+    phones_block = (
+        "\n".join(f"- {p}" for p in phone_lines)
+        if phone_lines
+        else "(brak)"
+    )
+    extra = (extra_context or "").strip()
+    if len(extra) > 2500:
+        extra = extra[:2497] + "..."
+    return f"""ROLA
+Jesteś analitykiem kontaktów B2B dla hurtowni i składów materiałów budowlanych na Ukrainie.
+Twoje jedyne zadanie: wskazać najlepszy e-mail do zapytania ofertowego oraz telefony firmy.
+
+KONTEKST
+{header}
+
+KANDYDACI Z REGEX (system ich nie wybrał do wysyłki — zweryfikuj, wybierz najlepszy LUB znajdź inny w tekście)
+{regex_block}
+
+KANDYDACI Z IMPRESSUM / KONTAKT (regex)
+{impressum_block}
+
+TELEFONY ZNALEZIONE PRZEZ REGEX
+{phones_block}
+
+DODATKOWY KONTEKST (Serper, weryfikacja, fragment strony)
+{extra or "(brak)"}
+
+ZASADY (ścisłe)
+• Wyciągaj wyłącznie dane obecne DOSŁOWNIE w tekście strony LUB na listach REGEX powyżej.
+• Jeśli REGEX znalazł sensowny e-mail firmowy (także gmail.com, ukr.net, i.ua) — UMIEŚĆ go w emails
+  (możesz wybrać najlepszy z listy REGEX, nie musisz znajdować innego).
+• Priorytet stron: /контакти, /kontakt, /contact, impressum, o firmie.
+• Telefony UA: +380 lub format 0XX… (komórka/stacjonarny); max 3 unikalne numery.
+• Odrzuć: noreply, no-reply, privacy, newsletter, rekrutacja, portale (instagram, facebook).
+• Local-part (przed @): 1–50 znaków.
+• Gdy crawl jest ubogi (WAF, Cloudflare, mało tekstu) — oprzyj się na REGEX + dodatkowym kontekście.
+• Niczego nie wymyślaj — jeśli brak danych, zwróć puste listy.
+
+WYJŚCIE (wyłącznie JSON, bez markdown)
+{{"company_name":"","emails":[],"phones":[],"impressum_emails":[],"reason":""}}
+
+Pola:
+• company_name — oficjalna nazwa firmy tylko gdy jasno w kontakcie/impressum, inaczej ""
+• emails — wszystkie sensowne e-maile firmowe (w tym wybrane z REGEX)
+• impressum_emails — podzbiór emails ze stron kontakt/impressum/legal
+• phones — max 3 unikalne numery UA
+• reason — max 1 zdanie po polsku (np. „Wybrano venbud.dealer@gmail.com z regex" lub „Brak kontaktu w tekście")
+
+FRAGMENT STRONY (crawl domeny)
+{snippet or "(pusty lub zablokowany przez WAF — użyj REGEX i kontekstu powyżej)"}
+"""
+
+
 def build_page_verify_prompt(
     company_name: str,
     website: str,

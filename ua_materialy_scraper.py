@@ -227,10 +227,11 @@ from email_targeting import (
     MIN_EMAIL_SCORE_FOR_SEND,
     get_registrable_domain,
     is_unsuitable_inquiry_email,
-    pick_best_email_for_inquiry,
-    pick_best_email_from_website_scrape,
-    rank_email_candidates,
-    score_email_candidate,
+)
+from ua_email_targeting import (
+    pick_best_email_for_inquiry_ua as pick_best_email_for_inquiry,
+    pick_best_email_from_website_scrape_ua as pick_best_email_from_website_scrape,
+    rank_email_candidates_ua as rank_email_candidates,
 )
 
 import requests
@@ -4908,7 +4909,8 @@ def pick_email_with_impressum_priority(
     website: str,
 ) -> tuple[str, int, str]:
     """
-    Najpierw Impressum (obowiązkowe źródło w DE), potem pozostałe podstrony.
+    Najpierw Impressum/kontakt, potem pozostałe podstrony.
+    UA: akceptuje gmail/ukr.net powiązane ze stroną firmy (patrz ua_email_targeting).
     Zwraca (email, score, metoda).
     """
     site = website or ""
@@ -5431,6 +5433,10 @@ def enrich_row_with_contacts(
         retail_verified=bool(row.get("retail_verified")),
         verification_text=verify_context,
     )
+    regex_emails = filter_commercial_emails(list(collected.get("emails") or []))
+    impressum_regex = filter_commercial_emails(
+        list(collected.get("impressum_emails") or [])
+    )
     if (
         not target_email
         and ENABLE_CLAUDE_CONTACT_EXTRACT
@@ -5439,22 +5445,39 @@ def enrich_row_with_contacts(
         crawl_text = _get_website_crawl_text(
             website, cache, purpose="contact"
         ) or collected.get("page_snippet") or ""
-        if crawl_text.strip():
-            from claude_contact_extract import (
-                claude_extract_contacts_from_pages,
-                merge_claude_contacts_into_collected,
-            )
+        from ua_claude_contact_extract import (
+            build_contact_extract_page_bundle,
+            claude_extract_contacts_from_pages_ua,
+        )
+        from claude_contact_extract import merge_claude_contacts_into_collected
 
-            console_step(
-                f"Claude Kontaktsuche (kein E-Mail per Regex): {website}"
-            )
-            parsed = claude_extract_contacts_from_pages(
+        contact_bundle = build_contact_extract_page_bundle(
+            crawl_text=crawl_text,
+            page_snippet=collected.get("page_snippet") or "",
+            extra_context=verify_context,
+            regex_phones=list(collected.get("phones") or []),
+        )
+        if contact_bundle.strip() or regex_emails or impressum_regex:
+            if regex_emails:
+                console_step(
+                    f"Claude kontakty (PL): regex ma {len(regex_emails)} kandydatów, "
+                    f"brak wyboru — {website}"
+                )
+            else:
+                console_step(
+                    f"Claude kontakty (PL): brak e-maila po regex — {website}"
+                )
+            parsed = claude_extract_contacts_from_pages_ua(
                 company_for_email,
                 website,
-                crawl_text,
+                contact_bundle,
                 logger,
                 cache,
                 cache_key=place_url,
+                regex_candidates=regex_emails,
+                impressum_candidates=impressum_regex,
+                regex_phones=list(collected.get("phones") or []),
+                extra_context=verify_context,
                 on_step=console_step,
             )
             if parsed and (parsed.get("emails") or parsed.get("phones")):
