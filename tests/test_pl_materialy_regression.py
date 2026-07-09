@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -164,6 +165,132 @@ class WojewodztwoRotationRegression(unittest.TestCase):
         nxt = commit_rotation_after_run(path, state, woj)
         self.assertIn(nxt, WOJEWODZTWO_ROTATION_ORDER)
         self.assertNotEqual(nxt, woj)
+
+
+class ContactDataRegression(unittest.TestCase):
+    def test_polish_phone_regex(self):
+        phones = scraper._find_phones_in_text_regex(
+            "Zadzwoń: +48 22 123 45 67 lub 0 601 234 567"
+        )
+        self.assertTrue(phones)
+        joined = " ".join(phones)
+        self.assertIn("48", joined.replace(" ", ""))
+
+    def test_extract_bundesland_from_plz(self):
+        woj = scraper.extract_bundesland({"adres": "ul. Testowa 1, 30-001 Kraków"})
+        self.assertEqual(woj, "malopolskie")
+
+    def test_extract_bundesland_rejects_german_state(self):
+        woj = scraper.extract_bundesland({"bundesland": "Sachsen", "adres": ""})
+        self.assertNotEqual(woj, "Sachsen")
+
+    def test_serper_address_not_snippet(self):
+        item = {
+            "snippet": "Cement portlandzki CEM I 42,5 — najlepsza cena",
+            "address": "ul. Budowlana 5, 00-001 Warszawa",
+        }
+        self.assertEqual(scraper._extract_serper_address(item), "ul. Budowlana 5, 00-001 Warszawa")
+
+    def test_reconcile_keeps_serper_phone(self):
+        row = {"telefon": "+48 22 123 45 67", "www": "https://hurt.pl"}
+        collected = {"website": "https://hurt.pl", "phones": []}
+        out = scraper.reconcile_contact_sources(row, collected)
+        self.assertIn("48", out["telefon"].replace(" ", ""))
+
+    def test_pl_country_hints_polish(self):
+        self.assertIn("warszawa", scraper.PL_COUNTRY_HINTS)
+        self.assertNotIn("ukraine", scraper.PL_COUNTRY_HINTS)
+
+    def test_row_enrichment_cache_ttl_and_version(self):
+        cache = scraper._empty_cache()
+        payload = {"company_name_clean": "Test", "address": "ul. A 1", "phone": "+48 22 123 45 67"}
+        scraper._store_row_enrichment_cache_entry(cache, "https://test.pl", payload)
+        self.assertEqual(
+            scraper._get_row_enrichment_cache_entry(cache, "https://test.pl"),
+            payload,
+        )
+        stale = {
+            "data": payload,
+            "at": (datetime.now() - timedelta(days=30)).isoformat(),
+            "version": scraper.PL_CACHE_ENRICHMENT_VERSION,
+        }
+        cache["claude_row_enrichment"]["https://test.pl"] = stale
+        self.assertIsNone(scraper._get_row_enrichment_cache_entry(cache, "https://test.pl"))
+
+    def test_serper_discovery_cache_requires_version(self):
+        cache = scraper._empty_cache()
+        sd = cache.setdefault("serper_discovery", {})
+        sd["search:test"] = {
+            "rows": [{"url": "https://x.pl", "adres": "snippet produktu"}],
+            "at": datetime.now().isoformat(),
+        }
+        self.assertIsNone(
+            scraper.get_cached_serper_discovery_rows(cache, "test", use_places_endpoint=False)
+        )
+
+    def test_contact_cache_payload_includes_address_fields(self):
+        row = {
+            "nazwa": "Hurtownia",
+            "adres": "ul. Test 1, 00-001 Warszawa",
+            "telefon": "+48 22 123 45 67",
+            "bundesland": "mazowieckie",
+            "discovery_bundesland": "mazowieckie",
+        }
+        payload = scraper._contact_cache_payload(row, {"email_target": "kontakt@test.pl"})
+        self.assertEqual(payload["full_address"], "ul. Test 1, 00-001 Warszawa")
+        self.assertEqual(payload["telefon"], "+48 22 123 45 67")
+        self.assertEqual(payload["bundesland"], "mazowieckie")
+
+    def test_apply_regex_keeps_serper_phone_when_no_regex_match(self):
+        row = {
+            "telefon": "+48 22 999 88 77",
+            "nazwa": "Hurtownia",
+            "adres": "Warszawa",
+        }
+        out = scraper.apply_regex_row_contact_cleanup(row)
+        self.assertIn("48", (out.get("telefon") or "").replace(" ", ""))
+
+    def test_looks_like_postal_address(self):
+        self.assertTrue(scraper._looks_like_postal_address("ul. Test 1, 00-001 Warszawa"))
+        self.assertFalse(
+            scraper._looks_like_postal_address("Cement portlandzki — najlepsza cena")
+        )
+
+    def test_extract_serper_address_empty_for_product_snippet_only(self):
+        item = {"snippet": "Cement portlandzki CEM I 42,5 — promocja"}
+        self.assertEqual(scraper._extract_serper_address(item), "")
+
+    def test_extract_bundesland_uses_discovery_bundesland(self):
+        woj = scraper.extract_bundesland(
+            {"discovery_bundesland": "pomorskie", "adres": ""}
+        )
+        self.assertEqual(woj, "pomorskie")
+
+    def test_pl_plz_prefix_map_covers_all_prefixes(self):
+        self.assertEqual(len(scraper.PL_PLZ_PREFIX_TO_WOJEWODZTWO), 100)
+        self.assertEqual(scraper.PL_PLZ_PREFIX_TO_WOJEWODZTWO["00"], "mazowieckie")
+        self.assertEqual(scraper.PL_PLZ_PREFIX_TO_WOJEWODZTWO["30"], "malopolskie")
+
+
+class CacheConfigRegression(unittest.TestCase):
+    def test_cache_version_constant(self):
+        self.assertEqual(scraper.PL_CACHE_ENRICHMENT_VERSION, "pl_enrichment_v2")
+
+    def test_run_config_syncs_cache_ttl_from_discovery_days(self):
+        from scraper_run_config import load_run_config_file
+
+        mod = type("M", (), {
+            "CLAUDE_DISCOVERY_CACHE_DAYS": 7,
+            "SERPER_DISCOVERY_CACHE_DAYS": 99,
+            "CLAUDE_ROW_ENRICHMENT_CACHE_DAYS": 99,
+            "WEBSITE_CRAWL_CACHE_DAYS": 99,
+        })()
+        data = load_run_config_file("run_config/pl_materialy.json", ROOT)
+        scraper.apply_pl_run_config_extras(mod, data)
+        self.assertEqual(mod.CLAUDE_DISCOVERY_CACHE_DAYS, 7)
+        self.assertEqual(mod.SERPER_DISCOVERY_CACHE_DAYS, 7)
+        self.assertEqual(mod.CLAUDE_ROW_ENRICHMENT_CACHE_DAYS, 7)
+        self.assertEqual(mod.WEBSITE_CRAWL_CACHE_DAYS, 7)
 
 
 class CampaignPathsRegression(unittest.TestCase):

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Prompty Claude — kampania UA: hurtownie materiałów budowlanych."""
+"""Prompty Claude — kampania PL: hurtownie materiałów budowlanych."""
 from __future__ import annotations
 
 import re
@@ -14,39 +14,41 @@ from pl_campaign_keyword_profile import (
     small_company_markers_sample,
 )
 
-_REQUIRED_MATERIALS = "cement, piasek, щебінь, цегла, блок, арматура, утеплювач, плитка, гіпсокартон"
+_REQUIRED_MATERIALS = "cement, piasek, żwir, cegła, bloczek, armatura, styropian, płytka, gips"
 PAGE_VERIFY_MAX_CHARS = 18000
 CONTACT_EXTRACT_MAX_CHARS = 16000
 _CONTACT_EXTRACT_TEXT_PRIORITY = (
-    "контакт",
     "kontakt",
     "contact",
     "mailto",
     "@",
-    "тел",
-    "телефон",
-    "phone",
-    "email",
+    "tel",
+    "telefon",
     "e-mail",
-    "адреса",
+    "email",
+    "adres",
+    "impressum",
+    "dane firmy",
 )
 _PAGE_VERIFY_TEXT_PRIORITY = (
     "materiały budowlane",
     "budowlane",
-    "каталог",
-    "асортимент",
-    "продукція",
-    "прайс",
-    "ціни",
-    "опт",
-    "склад",
-    "доставка",
-    "цемент",
-    "пісок",
-    "щебінь",
-    "цегла",
-    "утеплювач",
-    "плитка",
+    "hurtownia",
+    "skład budowlany",
+    "katalog",
+    "asortyment",
+    "produkty",
+    "cennik",
+    "ceny",
+    "hurt",
+    "skład",
+    "dostawa",
+    "cement",
+    "piasek",
+    "żwir",
+    "cegła",
+    "styropian",
+    "płytka",
 )
 
 
@@ -90,6 +92,104 @@ def prioritize_page_text_for_verify(
     return merged[: max_chars - 3] + "..."
 
 
+def build_contact_extract_prompt_pl(
+    company_name: str,
+    website: str,
+    page_text: str,
+    *,
+    regex_candidates: list[str] | None = None,
+    impressum_candidates: list[str] | None = None,
+    regex_phones: list[str] | None = None,
+    extra_context: str = "",
+) -> str:
+    """Prompt PL dla ekstrakcji kontaktów z crawl www (kampania PL)."""
+    from claude_page_text import build_claude_context_header, extract_crawl_section_urls
+
+    raw = page_text or ""
+    header = build_claude_context_header(
+        company_name,
+        website,
+        pages_crawled=max(raw.count("=== http"), 1 if raw else 0),
+        priority_urls=extract_crawl_section_urls(raw),
+    )
+    snippet = prioritize_page_text_for_verify(
+        raw,
+        max_chars=CONTACT_EXTRACT_MAX_CHARS,
+        priority_keywords=_CONTACT_EXTRACT_TEXT_PRIORITY,
+    )
+    regex_lines = [
+        e.strip()
+        for e in (regex_candidates or [])
+        if (e or "").strip() and "@" in e
+    ]
+    impressum_lines = [
+        e.strip()
+        for e in (impressum_candidates or [])
+        if (e or "").strip() and "@" in e
+    ]
+    phone_lines = [p.strip() for p in (regex_phones or []) if (p or "").strip()]
+    regex_block = (
+        "\n".join(f"- {e}" for e in regex_lines)
+        if regex_lines
+        else "(brak — szukaj wyłącznie w tekście strony)"
+    )
+    impressum_block = (
+        "\n".join(f"- {e}" for e in impressum_lines)
+        if impressum_lines
+        else "(brak)"
+    )
+    phones_block = (
+        "\n".join(f"- {p}" for p in phone_lines)
+        if phone_lines
+        else "(brak)"
+    )
+    extra = (extra_context or "").strip()
+    if len(extra) > 2500:
+        extra = extra[:2497] + "..."
+    return f"""ROLA
+Jesteś analitykiem kontaktów B2B dla hurtowni i składów materiałów budowlanych w Polsce.
+Twoje jedyne zadanie: wskazać najlepszy e-mail do zapytania ofertowego oraz telefony firmy.
+
+KONTEKST
+{header}
+
+KANDYDACI Z REGEX (system ich nie wybrał do wysyłki — zweryfikuj, wybierz najlepszy LUB znajdź inny w tekście)
+{regex_block}
+
+KANDYDACI Z IMPRESSUM / KONTAKT (regex)
+{impressum_block}
+
+TELEFONY ZNALEZIONE PRZEZ REGEX
+{phones_block}
+
+DODATKOWY KONTEKST (Serper, weryfikacja, fragment strony)
+{extra or "(brak)"}
+
+ZASADY (ścisłe)
+• Wyciągaj wyłącznie dane obecne DOSŁOWNIE w tekście strony LUB na listach REGEX powyżej.
+• Jeśli REGEX znalazł sensowny e-mail firmowy — UMIEŚĆ go w emails (możesz wybrać najlepszy z listy).
+• Priorytet stron: /kontakt, /contact, impressum, o firmie, dane kontaktowe.
+• Telefony PL: +48 lub format 0XX… (komórka/stacjonarny); max 3 unikalne numery.
+• Odrzuć: noreply, no-reply, privacy, newsletter, rekrutacja, portale (instagram, facebook).
+• Local-part (przed @): 1–50 znaków.
+• Gdy crawl jest ubogi (WAF, Cloudflare, mało tekstu) — oprzyj się na REGEX + dodatkowym kontekście.
+• Niczego nie wymyślaj — jeśli brak danych, zwróć puste listy.
+
+WYJŚCIE (wyłącznie JSON, bez markdown)
+{{"company_name":"","emails":[],"phones":[],"impressum_emails":[],"reason":""}}
+
+Pola:
+• company_name — oficjalna nazwa firmy tylko gdy jasno w kontakcie/impressum, inaczej ""
+• emails — wszystkie sensowne e-maile firmowe (w tym wybrane z REGEX)
+• impressum_emails — podzbiór emails ze stron kontakt/impressum/legal
+• phones — max 3 unikalne numery PL (+48 lub 0XX…)
+• reason — max 1 zdanie po polsku
+
+FRAGMENT STRONY (crawl domeny)
+{snippet or "(pusty lub zablokowany przez WAF — użyj REGEX i kontekstu powyżej)"}
+"""
+
+
 def build_page_verify_prompt(
     company_name: str,
     website: str,
@@ -122,40 +222,40 @@ def build_page_verify_prompt(
     neg_kw = ", ".join(negative_keywords_sample())
     small_kw = ", ".join(small_company_markers_sample())
     large_kw = ", ".join(large_company_markers_sample())
-    return f"""РОЛЬ
-Ти — аналітик B2B для пошуку постачальників будівельних матеріалів в Polskі.
-Ціль: гуртові склади, магазини будматеріалів, виробники та дистриб'ютори.
-НЕ ціль: портали новин, держустанови, чисті підрядники без продажу матеріалів, оголошення OLX.
+    return f"""ROLA
+Jesteś analitykiem B2B dla wyszukiwania dostawców materiałów budowlanych w Polsce.
+Cel: hurtownie, składy budowlane, producenci i dystrybutorzy materiałów budowlanych.
+NIE cel: portale informacyjne, urzędy, czysti wykonawcy remontów bez sprzedaży materiałów, ogłoszenia OLX.
 
-ЗАВДАННЯ
-Прочитай витяг сайту (усі підсторінки, позначені «=== URL ===»).
-Чи це комерційний постачальник будматеріалів? Відповідай ЛИШЕ JSON — без markdown.
+ZADANIE
+Przeczytaj wycinek strony (wszystkie podstrony oznaczone «=== URL ===»).
+Czy to komercyjny dostawca materiałów budowlanych? Odpowiedz WYŁĄCZNIE JSON — bez markdown.
 
-ЩО ВВАЖАЄТЬСЯ ДОКАЗОМ
-• Продаж/опт будматеріалів, склад, доставка, каталог, прайс
-• Згадка категорій: {_REQUIRED_MATERIALS}
-• Роль: постачальник, виробник, дистриб'ютор, будмаркет, будівельна база
+CO UZNAĆ ZA DOWÓD
+• Sprzedaż/hurt materiałów budowlanych, skład, dostawa, katalog, cennik
+• Wzmianka kategorii: {_REQUIRED_MATERIALS}
+• Rola: dostawca, producent, dystrybutor, hurtownia, skład budowlany
 
-ВІДХИЛИТИ (is_gu=false / has_retail_context=false)
-• Biuro architektoniczne, дизайн інтер'єру, ремонт квартир без продажу матеріалів
-• Новини, медіа, держоргани, банки, вакансії без комерційної пропозиції
-• OLX/оголошення б/у без стабільного бізнесу постачальника
+ODRZUĆ (is_gu=false / has_retail_context=false)
+• Biuro architektoniczne, wykończenia wnętrz, remont mieszkań bez sprzedaży materiałów
+• Wiadomości, media, urzędy, banki, oferty pracy bez oferty handlowej
+• OLX/ogłoszenia używane bez stabilnej działalności hurtowej
 
-ПОЛЯ JSON (ті самі ключі для сумісності з pipeline)
-• is_gu = true якщо це постачальник/виробник/склад будматеріалів
-• has_retail_context = true якщо є комерційна пропозиція матеріалів (каталог, асортимент, ціни, опт)
-• matched_chains = категорії матеріалів з тексту (cement, piasek, …) — лише якщо згадані
-• is_small_firm = регіональна/мала фірма (не велика міжнародна мережа)
+POLA JSON (te same klucze dla kompatybilności z pipeline)
+• is_gu = true jeśli to dostawca/producent/skład materiałów budowlanych
+• has_retail_context = true jeśli jest komercyjna oferta materiałów (katalog, asortyment, ceny, hurt)
+• matched_chains = kategorie materiałów z tekstu (cement, piasek, …) — tylko jeśli wymienione
+• is_small_firm = regionalna/mała firma (nie duża międzynarodowa sieć)
 
-МАЛІ ОЗНАКИ: {small_kw}
-ВЕЛИКІ ОЗНАКИ (is_small_firm=false): {large_kw}
+MAŁE OZNaki: {small_kw}
+DUŻE OZNaki (is_small_firm=false): {large_kw}
 
-КЛЮЧОВІ СЛОВА ПОСТАЧАЛЬНИКА: {supplier_kw}
-КОНТЕКСТ МАТЕРІАЛІВ: {material_kw}
-КАТЕГОРІЇ: {category_kw}
-НЕГАТИВ: {neg_kw}
+SŁOWA KLUCZOWE DOSTAWCY: {supplier_kw}
+KONTEKST MATERIAŁÓW: {material_kw}
+KATEGORIE: {category_kw}
+NEGATYWNE: {neg_kw}
 
-СХЕМА JSON
+SCHEMAT JSON
 {{
   "matched_gu_keywords": [],
   "matched_retail_keywords": [],
@@ -168,14 +268,14 @@ def build_page_verify_prompt(
   "reason": ""
 }}
 
-КОНТЕКСТ
+KONTEKST
 {header}
 
-АВТОДОКАЗИ
+AUTODOWODY
 {evidence}
 
-ВИТЯГ САЙТУ
-{snippet or "(порожньо)"}
+WYCIĄG STRONY
+{snippet or "(pusty)"}
 """
 
 
@@ -190,23 +290,23 @@ def build_row_cleanup_prompt(
     handelsketten: str = "",
     url: str = "",
 ) -> str:
-    return f"""РОЛЬ
-Ти готуєш рядок Excel для B2B-бази постачальників будматеріалів в Polskі.
-Відповідай ЛИШЕ JSON.
+    return f"""ROLA
+Przygotowujesz wiersz Excel dla bazy B2B dostawców materiałów budowlanych w Polsce.
+Odpowiedz WYŁĄCZNIE JSON.
 
-СХЕМА
+SCHEMAT
 {{"company_name_clean":"","address":"","phone":"","website":"","bundesland":"","handelsketten":"","url":""}}
 
-ПРАВИЛА
-• company_name_clean — офіційна назва + форма (ТОВ, ПП, ФОП) або ""
-• address — адреса в Polskі або ""
-• phone — один номер UA (+380 або 0…) або ""
-• website — https://domain (корінь) або ""
-• bundesland — один з: [{states}] або ""
-• handelsketten — категорії матеріалів (cement, piasek, …) через кому або ""
-• url — як website
+ZASADY
+• company_name_clean — oficjalna nazwa + forma prawna (sp. z o.o., S.A., sp.k., sp.j.) lub ""
+• address — pełny adres pocztowy w Polsce (ulica, kod pocztowy, miasto) lub "" (NIE opis produktu, NIE fragment SEO)
+• phone — jeden numer PL (+48 lub 0XX…) lub ""
+• website — https://domena (katalog główny) lub ""
+• bundesland — dokładnie jedno województwo z listy: [{states}] lub "" (NIGDY kod pocztowy, NIGDY numer telefonu)
+• handelsketten — kategorie materiałów (cement, piasek, …) oddzielone przecinkiem lub ""
+• url — jak website
 
-ВХІД
+WEJŚCIE
 company={company!r}
 address={address!r}
 phone={phone!r}
@@ -297,26 +397,26 @@ def build_custom_email_prompt_uk(
     city_name: str = "",
     delivery_address: str = "",
 ) -> str:
-    ctx_city = f"Регіон: {city_name}. " if city_name else ""
-    ctx_addr = f"Адреса доставки (без змін): {delivery_address}. " if delivery_address else ""
-    return f"""РОЛЬ
-Ти редактор B2B-листів polskською. Мінімально адаптуй шаблон під конкретну фірму.
+    ctx_city = f"Region: {city_name}. " if city_name else ""
+    ctx_addr = f"Adres dostawy (bez zmian): {delivery_address}. " if delivery_address else ""
+    return f"""ROLA
+Jesteś redaktorem listów B2B po polsku. Minimalnie dostosuj szablon do konkretnej firmy.
 
-ОДЕРЖУВАЧ
+ODBIORCA
 {company_name}
 {ctx_city}{ctx_addr}
 
-ЗАВДАННЯ
-Адаптуй шаблон (1–2 речення контексту про фірму). Збережи ВСІ факти: обсяги, адреси, телефони, підпис.
+ZADANIE
+Dostosuj szablon (1–2 zdania kontekstu o firmie). Zachowaj WSZYSTKIE fakty: wolumeny, adresy, telefony, podpis.
 
-ЗАБОРОНЕНО
-• Вигадані ціни
-• gratis, акція, терміново
-• Зміна підпису
+ZAKAZANE
+• Wymyślone ceny
+• gratis, promocja, pilnie
+• Zmiana podpisu
 
-ВИХІД (лише JSON)
+WYJŚCIE (tylko JSON)
 {{"subject":"...","body":"..."}}
 
-ШАБЛОН
+SZABLON
 {draft}
 """

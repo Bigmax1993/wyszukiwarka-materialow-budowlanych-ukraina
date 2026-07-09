@@ -35,6 +35,16 @@ def normalize_phone_contact(raw: str) -> str:
         return ""
     if len(digits) in (4, 8) and digits.startswith(_PHONE_SKIP_DIGIT_PREFIXES):
         return ""
+    if digits.startswith("0048"):
+        digits = "48" + digits[4:]
+    if digits.startswith("48") and len(digits) >= 11:
+        rest = digits[2:]
+        if not normalized.startswith("+"):
+            if len(rest) == 9:
+                normalized = f"+48 {rest[:3]} {rest[3:6]} {rest[6:]}".strip()
+            else:
+                normalized = f"+48 {rest}".strip()
+        return normalized
     if digits.startswith("49") and len(digits) < 10:
         return ""
     if digits.startswith("0049"):

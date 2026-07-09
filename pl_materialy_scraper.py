@@ -127,6 +127,9 @@ def apply_pl_run_config_extras(module, data: dict) -> None:
         ("claude_discovery_reserve", "CLAUDE_DISCOVERY_RESERVE"),
         ("claude_discovery_min_gain", "CLAUDE_DISCOVERY_MIN_GAIN"),
         ("claude_discovery_cache_days", "CLAUDE_DISCOVERY_CACHE_DAYS"),
+        ("claude_row_enrichment_cache_days", "CLAUDE_ROW_ENRICHMENT_CACHE_DAYS"),
+        ("serper_discovery_cache_days", "SERPER_DISCOVERY_CACHE_DAYS"),
+        ("website_crawl_cache_days", "WEBSITE_CRAWL_CACHE_DAYS"),
     )
     for json_key, attr in _int_keys:
         if json_key in normalized_data and hasattr(module, attr):
@@ -134,6 +137,14 @@ def apply_pl_run_config_extras(module, data: dict) -> None:
                 setattr(module, attr, int(normalized_data[json_key]))
             except (TypeError, ValueError):
                 pass
+    if hasattr(module, "CLAUDE_DISCOVERY_CACHE_DAYS"):
+        ttl = getattr(module, "CLAUDE_DISCOVERY_CACHE_DAYS")
+        if "serper_discovery_cache_days" not in normalized_data:
+            module.SERPER_DISCOVERY_CACHE_DAYS = ttl
+        if "claude_row_enrichment_cache_days" not in normalized_data:
+            module.CLAUDE_ROW_ENRICHMENT_CACHE_DAYS = ttl
+        if "website_crawl_cache_days" not in normalized_data:
+            module.WEBSITE_CRAWL_CACHE_DAYS = ttl
     if (
         "claude_daily_limit" in normalized_data
         or "claude_discovery_reserve" in normalized_data
@@ -251,6 +262,208 @@ MIN_VERIFIED_CONTACTS_ROTATION = 20
 DISCOVERY_MIN_PENDING_GHA_FAIL = 5
 SERPER_CANDIDATES_TARGET = 80
 SERPER_DISCOVERY_EMPTY_CACHE_DAYS = 7
+SERPER_DISCOVERY_CACHE_DAYS = 7
+PL_CACHE_ENRICHMENT_VERSION = "pl_enrichment_v2"
+CLAUDE_ROW_ENRICHMENT_CACHE_DAYS = 7
+WEBSITE_CRAWL_CACHE_DAYS = 7
+def _cache_timestamp_age_days(ts: str) -> float | None:
+    if not (ts or "").strip():
+        return None
+    try:
+        return (datetime.now() - datetime.fromisoformat(ts.strip())).total_seconds() / 86400.0
+    except ValueError:
+        return None
+
+
+def _cache_entry_is_fresh(
+    entry,
+    *,
+    max_days: int,
+    version: str = "",
+) -> bool:
+    if entry is None:
+        return False
+    if version:
+        if not isinstance(entry, dict):
+            return False
+        if entry.get("version") != version:
+            return False
+        age_days = _cache_timestamp_age_days(str(entry.get("at") or ""))
+        if age_days is None:
+            return False
+        return age_days < max_days
+    if isinstance(entry, dict) and "at" in entry:
+        age_days = _cache_timestamp_age_days(str(entry.get("at") or ""))
+        if age_days is None:
+            return False
+        return age_days < max_days
+    return False
+
+
+def _wrap_cache_entry(data, *, version: str) -> dict:
+    return {
+        "data": data,
+        "at": datetime.now().isoformat(),
+        "version": version,
+    }
+
+
+def _unwrap_cache_entry(entry, default=None):
+    if isinstance(entry, dict) and "data" in entry:
+        return entry.get("data", default)
+    return entry
+
+
+def _looks_like_legacy_row_enrichment(entry: dict) -> bool:
+    return any(
+        key in entry
+        for key in (
+            "company_name_clean",
+            "address",
+            "phone",
+            "website",
+            "bundesland",
+            "handelsketten",
+        )
+    )
+
+
+def _get_row_enrichment_cache_entry(cache: dict, cache_key: str) -> dict | None:
+    claude_cache = cache.get("claude_row_enrichment") or {}
+    entry = claude_cache.get(cache_key)
+    if entry and _cache_entry_is_fresh(
+        entry,
+        max_days=CLAUDE_ROW_ENRICHMENT_CACHE_DAYS,
+        version=PL_CACHE_ENRICHMENT_VERSION,
+    ):
+        payload = _unwrap_cache_entry(entry)
+        return dict(payload) if isinstance(payload, dict) else None
+    if isinstance(entry, dict) and _looks_like_legacy_row_enrichment(entry):
+        return None
+    legacy = (cache.get("gemini_row_enrichment") or {}).get(cache_key)
+    if isinstance(legacy, dict) and _looks_like_legacy_row_enrichment(legacy):
+        return None
+    return None
+
+
+def _store_row_enrichment_cache_entry(cache: dict, cache_key: str, payload: dict) -> None:
+    if not cache_key:
+        return
+    claude_cache = cache.setdefault("claude_row_enrichment", {})
+    claude_cache[cache_key] = _wrap_cache_entry(
+        dict(payload),
+        version=PL_CACHE_ENRICHMENT_VERSION,
+    )
+
+
+def _contact_cache_payload(row: dict, extra: dict) -> dict:
+    payload = dict(extra)
+    payload.setdefault(
+        "company_name",
+        row.get("company_name_clean") or row.get("nazwa", ""),
+    )
+    payload.setdefault("company_name_clean", row.get("company_name_clean") or row.get("nazwa", ""))
+    payload.setdefault("company_name_raw", row.get("company_name_raw", ""))
+    payload["full_address"] = (row.get("full_address") or row.get("adres") or "").strip()
+    payload["adres"] = (row.get("adres") or row.get("full_address") or "").strip()
+    payload["telefon"] = (row.get("telefon") or "").strip()
+    payload["bundesland"] = (row.get("bundesland") or "").strip()
+    payload["discovery_bundesland"] = (row.get("discovery_bundesland") or "").strip()
+    if not payload.get("page_snippet"):
+        payload["page_snippet"] = (row.get("page_snippet") or "").strip()
+    return payload
+
+
+def _purge_stale_pl_cache_buckets(cache: dict, logger: logging.Logger | None = None) -> int:
+    """Usuwa przeterminowane / legacy wpisy cache PL (adres, telefony, Claude cleanup)."""
+    removed = 0
+    meta = cache.setdefault("cache_meta", {})
+    version_changed = meta.get("pl_enrichment_version") != PL_CACHE_ENRICHMENT_VERSION
+    if version_changed:
+        for bucket in (
+            "serper_discovery",
+            "claude_row_enrichment",
+            "claude_contact_extract",
+            "website_crawl",
+        ):
+            n = len(cache.get(bucket) or {})
+            if n:
+                removed += n
+            cache[bucket] = {}
+        meta["pl_enrichment_version"] = PL_CACHE_ENRICHMENT_VERSION
+        if logger:
+            logger.info(
+                "Cache PL: wyczyszczono buckety po zmianie wersji %s (usunięto %s wpisów)",
+                PL_CACHE_ENRICHMENT_VERSION,
+                removed,
+            )
+        return removed
+
+    sd = cache.get("serper_discovery") or {}
+    if isinstance(sd, dict):
+        for key in list(sd.keys()):
+            _, miss = _parse_serper_discovery_cache_entry(sd.get(key))
+            if miss:
+                sd.pop(key, None)
+                removed += 1
+
+    row_cache = cache.get("claude_row_enrichment") or {}
+    if isinstance(row_cache, dict):
+        for key in list(row_cache.keys()):
+            if not _get_row_enrichment_cache_entry(cache, key):
+                row_cache.pop(key, None)
+                removed += 1
+
+    wc = cache.get("website_crawl") or {}
+    if isinstance(wc, dict):
+        for site in list(wc.keys()):
+            if not _website_crawl_cache_entry_is_fresh(wc.get(site)):
+                wc.pop(site, None)
+                removed += 1
+
+    if logger and removed:
+        logger.info("Cache PL: usunięto %s przeterminowanych wpisów", removed)
+    return removed
+
+
+def _website_crawl_cache_entry_is_fresh(entry) -> bool:
+    from website_full_crawl import WebsiteCrawlResult
+
+    if isinstance(entry, WebsiteCrawlResult):
+        return True
+    if _cache_entry_is_fresh(
+        entry,
+        max_days=WEBSITE_CRAWL_CACHE_DAYS,
+        version=PL_CACHE_ENRICHMENT_VERSION,
+    ):
+        return True
+    if isinstance(entry, dict) and "pages" in entry:
+        return False
+    return False
+
+
+def _website_crawl_from_cache_entry(entry):
+    from website_full_crawl import WebsiteCrawlResult, website_crawl_result_from_dict
+
+    if isinstance(entry, WebsiteCrawlResult):
+        return entry
+    payload = _unwrap_cache_entry(entry, entry)
+    if isinstance(payload, dict) and "pages" in payload:
+        return website_crawl_result_from_dict(payload)
+    return None
+
+
+def _website_crawl_to_cache_entry(result) -> dict:
+    from website_full_crawl import WebsiteCrawlResult, website_crawl_result_to_dict
+
+    payload = (
+        website_crawl_result_to_dict(result)
+        if isinstance(result, WebsiteCrawlResult)
+        else result
+    )
+    return _wrap_cache_entry(payload, version=PL_CACHE_ENRICHMENT_VERSION)
+
+
 PENDING_WWW_VERIFY_REASON = "pending_www_verify"
 CAMPAIGN_TIMEZONE = os.environ.get("SCRAPER_TIMEZONE", "Europe/Warsaw")
 
@@ -398,24 +611,69 @@ _FOREIGN_TLD_SUFFIXES = (
 )
 # Geo / Serper – de_gu_keywords.py
 PL_COUNTRY_HINTS = [
-    "polskа",
-    "ukraine",
-    "украина",
-    ".ua/",
-    "київ",
-    "kyiv",
-    "львів",
-    "lviv",
-    "одеса",
-    "odesa",
-    "харків",
-    "kharkiv",
+    "polska",
+    "polski",
+    "polskie",
+    "polskich",
+    ".pl/",
+    ".pl ",
+    "warszawa",
+    "kraków",
+    "krakow",
+    "wrocław",
+    "wroclaw",
+    "gdańsk",
+    "gdansk",
+    "poznań",
+    "poznan",
+    "łódź",
+    "lodz",
+    "katowice",
+    "lublin",
+    "białystok",
+    "bialystok",
+    "szczecin",
+    "rzeszów",
+    "rzeszow",
 ]
-DE_EAST_PLZ_PREFIXES = frozenset({
-    "01", "02", "03", "04", "06", "07", "08", "09",
-    "14", "15", "16", "17", "18", "19",
-    "37", "38", "39", "98", "99",
-})
+PL_PLZ_PREFIX_TO_WOJEWODZTWO: dict[str, str] = {}
+for _p in range(0, 10):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "mazowieckie"
+for _p in range(10, 15):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "warminsko-mazurskie"
+for _p in range(15, 20):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "podlaskie"
+for _p in range(20, 25):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "lubelskie"
+for _p in range(25, 30):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "swietokrzyskie"
+for _p in range(30, 35):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "malopolskie"
+for _p in range(35, 40):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "podkarpackie"
+for _p in range(40, 45):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "slaskie"
+for _p in range(45, 50):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "opolskie"
+for _p in range(50, 60):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "dolnoslaskie"
+for _p in range(60, 65):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "wielkopolskie"
+for _p in range(65, 70):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "lubuskie"
+for _p in range(70, 75):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "zachodniopomorskie"
+for _p in range(75, 80):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "pomorskie"
+for _p in range(80, 85):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "pomorskie"
+for _p in range(85, 90):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "kujawsko-pomorskie"
+for _p in range(90, 96):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "lodzkie"
+for _p in range(96, 100):
+    PL_PLZ_PREFIX_TO_WOJEWODZTWO[f"{_p:02d}"] = "mazowieckie"
+DE_EAST_PLZ_PREFIXES = frozenset(PL_PLZ_PREFIX_TO_WOJEWODZTWO.keys())
 SUPPRESSED_EMAIL_LOCALPARTS = {
     "noreply",
     "no-reply",
@@ -844,50 +1102,22 @@ def save_excel(rows, path: Path, logger: logging.Logger, cache=None) -> None:
 
 def extract_bundesland(row: dict) -> str:
     explicit = (row.get("bundesland") or "").strip()
-    if explicit:
+    if explicit in PL_WOJEWODZTWA:
         return explicit
+    discovery = (row.get("discovery_bundesland") or "").strip()
+    if discovery in PL_WOJEWODZTWA:
+        return discovery
     text = " ".join(
         x for x in [(row.get("full_address") or ""), (row.get("adres") or "")] if x
     ).lower()
     for state in PL_WOJEWODZTWA:
         if state.lower() in text:
             return state
-    mapping = (
-        ("brandenburg", "Brandenburg"),
-        ("sachsen-anhalt", "Sachsen-Anhalt"),
-        ("sachsen", "Sachsen"),
-        ("thüringen", "Thueringen"),
-        ("thueringen", "Thueringen"),
-    )
-    for key, val in mapping:
-        if key in text:
-            return val
     plz_list = extract_plz_from_text(text)
     if plz_list:
         prefix = plz_list[0][:2]
-        plz_state = {
-            "01": "Sachsen",
-            "02": "Sachsen",
-            "03": "Brandenburg",
-            "04": "Sachsen",
-            "06": "Sachsen-Anhalt",
-            "07": "Sachsen",
-            "08": "Sachsen",
-            "09": "Sachsen",
-            "14": "Brandenburg",
-            "15": "Brandenburg",
-            "16": "Brandenburg",
-            "17": "Brandenburg",
-            "18": "Brandenburg",
-            "19": "Brandenburg",
-            "37": "Thueringen",
-            "38": "Sachsen-Anhalt",
-            "39": "Sachsen-Anhalt",
-            "98": "Thueringen",
-            "99": "Thueringen",
-        }
-        if prefix in plz_state:
-            return plz_state[prefix]
+        if prefix in PL_PLZ_PREFIX_TO_WOJEWODZTWO:
+            return PL_PLZ_PREFIX_TO_WOJEWODZTWO[prefix]
     return ""
 
 
@@ -1288,7 +1518,6 @@ def enrich_row_with_llm_cleanup(
 
 
 def enrich_row_with_claude_cleanup(row: dict, logger: logging.Logger, cache: dict) -> dict:
-    claude_cache = cache.setdefault("claude_row_enrichment", {})
     cache_key = (
         (row.get("url") or "").strip()
         or f"{(row.get('nazwa') or '').strip()}|{(row.get('www') or '').strip()}"
@@ -1300,15 +1529,9 @@ def enrich_row_with_claude_cleanup(row: dict, logger: logging.Logger, cache: dic
     company = sanitize_special_text(
         row.get("company_name_clean") or row.get("nazwa") or row.get("company_name_raw") or ""
     )
-    if cache_key and cache_key in claude_cache:
-        apply_row_enrichment_to_row(row, claude_cache[cache_key])
-        row = apply_regex_row_contact_cleanup(row)
-        return finalize_row_for_excel_tables(row)
-    if cache_key and cache_key in (cache.get("gemini_row_enrichment") or {}):
-        legacy = (cache.get("gemini_row_enrichment") or {}).get(cache_key)
-        if isinstance(legacy, dict):
-            claude_cache[cache_key] = dict(legacy)
-            apply_row_enrichment_to_row(row, claude_cache[cache_key])
+    cached_payload = _get_row_enrichment_cache_entry(cache, cache_key) if cache_key else None
+    if cached_payload:
+        apply_row_enrichment_to_row(row, cached_payload)
         row = apply_regex_row_contact_cleanup(row)
         return finalize_row_for_excel_tables(row)
 
@@ -1330,7 +1553,7 @@ def enrich_row_with_claude_cleanup(row: dict, logger: logging.Logger, cache: dic
         fallback = row_cleanup_fallback(row, company, address, phone, email, website)
         apply_row_enrichment_to_row(row, fallback)
         if cache_key:
-            claude_cache[cache_key] = fallback
+            _store_row_enrichment_cache_entry(cache, cache_key, fallback)
         row = apply_regex_row_contact_cleanup(row)
         return finalize_row_for_excel_tables(row)
 
@@ -1350,7 +1573,7 @@ def enrich_row_with_claude_cleanup(row: dict, logger: logging.Logger, cache: dic
         fallback = row_cleanup_fallback(row, company, address, phone, email, website)
         apply_row_enrichment_to_row(row, fallback)
         if cache_key:
-            claude_cache[cache_key] = fallback
+            _store_row_enrichment_cache_entry(cache, cache_key, fallback)
         row = apply_regex_row_contact_cleanup(row)
         return finalize_row_for_excel_tables(row)
 
@@ -1375,7 +1598,7 @@ def enrich_row_with_claude_cleanup(row: dict, logger: logging.Logger, cache: dic
         claude_result["bundesland"] = extract_bundesland(row)
     apply_row_enrichment_to_row(row, claude_result)
     if cache_key:
-        claude_cache[cache_key] = claude_result
+        _store_row_enrichment_cache_entry(cache, cache_key, claude_result)
     row = apply_regex_row_contact_cleanup(row)
     return finalize_row_for_excel_tables(row)
 
@@ -1658,6 +1881,7 @@ def load_existing_output(path: Path, logger: logging.Logger):
 
 def _empty_cache() -> dict:
     return {
+        "cache_meta": {"pl_enrichment_version": PL_CACHE_ENRICHMENT_VERSION},
         "places": {},
         "contacts": {},
         "serper": {},
@@ -1684,32 +1908,39 @@ def _prepare_cache_for_json(cache: dict) -> dict:
     from website_full_crawl import WebsiteCrawlResult, website_crawl_result_to_dict
 
     payload = dict(cache)
+    payload.setdefault(
+        "cache_meta",
+        {"pl_enrichment_version": PL_CACHE_ENRICHMENT_VERSION},
+    )
     wc = payload.get("website_crawl")
     if isinstance(wc, dict):
-        payload["website_crawl"] = {
-            site: (
-                website_crawl_result_to_dict(val)
-                if isinstance(val, WebsiteCrawlResult)
-                else val
-            )
-            for site, val in wc.items()
-        }
+        serialized: dict = {}
+        for site, val in wc.items():
+            if isinstance(val, WebsiteCrawlResult):
+                serialized[site] = _website_crawl_to_cache_entry(val)
+            elif isinstance(val, dict) and "pages" in val and "version" not in val:
+                serialized[site] = _website_crawl_to_cache_entry(val)
+            else:
+                serialized[site] = val
+        payload["website_crawl"] = serialized
     return payload
 
 
 def _hydrate_website_crawl_cache(cache: dict) -> None:
     """Po json.load: dict → WebsiteCrawlResult w website_crawl."""
-    from website_full_crawl import WebsiteCrawlResult, website_crawl_result_from_dict
-
     wc = cache.get("website_crawl")
     if not isinstance(wc, dict):
         cache["website_crawl"] = {}
         return
     for site, val in list(wc.items()):
-        if isinstance(val, WebsiteCrawlResult):
+        if not _website_crawl_cache_entry_is_fresh(val):
+            wc.pop(site, None)
             continue
-        if isinstance(val, dict) and "pages" in val:
-            wc[site] = website_crawl_result_from_dict(val)
+        hydrated = _website_crawl_from_cache_entry(val)
+        if hydrated is not None:
+            wc[site] = hydrated
+        else:
+            wc.pop(site, None)
 
 
 def reset_pipeline_cache() -> dict:
@@ -1779,18 +2010,19 @@ def row_from_cache_contact(place_url: str, info: dict) -> dict | None:
     )
     if not pending_www and not is_row_eligible_for_excel_export(row_probe):
         return None
-    phone = (info.get("phones_found") or "").strip()
+    phone = (info.get("telefon") or info.get("phones_found") or "").strip()
     if "," in phone:
         phone = phone.split(",", 1)[0].strip()
     return normalize_row_company_name(
         {
             **row_probe,
             "company_name_raw": info.get("company_name_raw") or name,
-            "full_address": info.get("full_address") or "",
-            "adres": info.get("full_address") or "",
+            "full_address": info.get("full_address") or info.get("adres") or "",
+            "adres": info.get("adres") or info.get("full_address") or "",
             "telefon": phone,
             "phones_found": info.get("phones_found") or phone,
             "bundesland": info.get("bundesland") or "",
+            "discovery_bundesland": info.get("discovery_bundesland") or "",
             "email_status": (info.get("email_status") or "").strip(),
             "contact_sources": info.get("contact_sources") or "",
             "is_small_firm": info.get("is_small_firm", True),
@@ -1869,6 +2101,9 @@ def load_cache(logger: logging.Logger) -> dict:
             if k not in cache:
                 cache[k] = {}
         _hydrate_website_crawl_cache(cache)
+        removed = _purge_stale_pl_cache_buckets(cache, logger)
+        if removed:
+            save_cache(cache, logger)
         # Legacy migration (read-only fallback buckets from Gemini naming).
         if (
             not cache.get("claude_row_enrichment")
@@ -2059,7 +2294,10 @@ def pipeline_row_to_contact_info(row: dict) -> dict:
             "gu_marker": (row.get("gu_marker") or "").strip(),
             "contact_quality_score": int(row.get("contact_quality_score", 0) or 0),
             "full_address": (row.get("full_address") or row.get("adres") or "").strip(),
+            "adres": (row.get("adres") or row.get("full_address") or "").strip(),
+            "telefon": (row.get("telefon") or "").strip(),
             "bundesland": (row.get("bundesland") or "").strip(),
+            "discovery_bundesland": (row.get("discovery_bundesland") or "").strip(),
         }.items()
         if v not in ("", None) or k in (
             "retail_verified",
@@ -2581,12 +2819,13 @@ def _parse_serper_discovery_cache_entry(entry) -> tuple[list[dict] | None, bool]
     if entry is None:
         return None, True
     if isinstance(entry, list):
-        return entry, False
+        return None, True
     if not isinstance(entry, dict):
         return None, True
     if entry.get("empty"):
         ts = (entry.get("at") or "").strip()
-        if ts:
+        version_ok = entry.get("version") == PL_CACHE_ENRICHMENT_VERSION
+        if ts and version_ok:
             try:
                 age = datetime.now() - datetime.fromisoformat(ts)
                 if age < timedelta(days=SERPER_DISCOVERY_EMPTY_CACHE_DAYS):
@@ -2596,6 +2835,12 @@ def _parse_serper_discovery_cache_entry(entry) -> tuple[list[dict] | None, bool]
         return None, True
     rows = entry.get("rows")
     if isinstance(rows, list):
+        if not _cache_entry_is_fresh(
+            entry,
+            max_days=SERPER_DISCOVERY_CACHE_DAYS,
+            version=PL_CACHE_ENRICHMENT_VERSION,
+        ):
+            return None, True
         return rows, False
     return None, True
 
@@ -2621,9 +2866,18 @@ def store_serper_discovery_rows(
     sd = cache.setdefault("serper_discovery", {})
     key = _serper_discovery_cache_key(query, use_places_endpoint=use_places_endpoint)
     if rows:
-        sd[key] = {"rows": rows, "at": datetime.now().isoformat()}
+        sd[key] = {
+            "rows": rows,
+            "at": datetime.now().isoformat(),
+            "version": PL_CACHE_ENRICHMENT_VERSION,
+        }
     else:
-        sd[key] = {"empty": True, "at": datetime.now().isoformat(), "rows": []}
+        sd[key] = {
+            "empty": True,
+            "at": datetime.now().isoformat(),
+            "rows": [],
+            "version": PL_CACHE_ENRICHMENT_VERSION,
+        }
 
 
 def count_retail_verified_for_bundesland(rows: list, land: str) -> int:
@@ -3028,11 +3282,15 @@ def _crawl_website_for_company(
     crawl_cache = (cache or {}).setdefault("website_crawl", {})
     if website in crawl_cache:
         cached = crawl_cache[website]
-        if isinstance(cached, WebsiteCrawlResult):
-            console_step(
-                f"Website-Crawl Cache: {website} ({len(cached.urls_visited)} Seiten)"
-            )
-            return cached, format_crawl_text_for_claude(cached)
+        if _website_crawl_cache_entry_is_fresh(cached):
+            hydrated = _website_crawl_from_cache_entry(cached)
+            if hydrated is not None:
+                crawl_cache[website] = hydrated
+                console_step(
+                    f"Website-Crawl Cache: {website} ({len(hydrated.urls_visited)} Seiten)"
+                )
+                return hydrated, format_crawl_text_for_claude(hydrated)
+        crawl_cache.pop(website, None)
 
     console_step(f"Website-Crawl (gesamte Domain): {website}")
 
@@ -3065,8 +3323,9 @@ def _get_website_crawl_text(
     if not site:
         return ""
     crawl = ((cache or {}).get("website_crawl") or {}).get(site)
-    if isinstance(crawl, WebsiteCrawlResult):
-        return format_crawl_text_for_claude(crawl, purpose=purpose)
+    hydrated = _website_crawl_from_cache_entry(crawl)
+    if hydrated is not None and _website_crawl_cache_entry_is_fresh(crawl):
+        return format_crawl_text_for_claude(hydrated, purpose=purpose)
     return ""
 
 
@@ -3665,7 +3924,9 @@ _PAGE_EMAIL_RE = re.compile(
     re.IGNORECASE,
 )
 _PHONE_TEXT_RE = re.compile(
-    rf"(?:\+49|0049|0)[\s\-/]?(?:\(?\d{{1,5}}\)?[\s\-/]?)?[\d\s\-/]{{1,{CONTACT_DATA_TOKEN_MAX}}}\d"
+    r"(?:\+48|0048)(?:[\s\-/]?\d){2,}"
+    r"|"
+    r"(?<!\d)0\d{1,2}[\s\-/]?\d{3}[\s\-/]?\d{2,3}[\s\-/]?\d{2,3}(?!\d)"
 )
 
 
@@ -3828,9 +4089,10 @@ def apply_regex_row_contact_cleanup(row: dict) -> dict:
             else phones[0]
         )
     else:
-        current_p = _normalize_href_phone((row.get("telefon") or "").strip())
-        if not current_p or len(current_p) > CONTACT_DATA_TOKEN_MAX:
-            row["telefon"] = ""
+        fallback = _normalize_href_phone((row.get("telefon") or "").strip())
+        row["telefon"] = (
+            fallback if fallback and len(fallback) <= CONTACT_DATA_TOKEN_MAX else ""
+        )
 
     return row
 
@@ -3983,7 +4245,7 @@ def reconcile_contact_sources(row: dict, collected: dict) -> dict:
     same_phone = bool(maps_phone_norm and maps_phone_norm in website_phone_norms)
     same_website = bool(maps_website and website and maps_website == website)
     if same_phone or same_website:
-        row["telefon"] = website_phones[0] if website_phones else ""
+        row["telefon"] = website_phones[0] if website_phones else maps_phone
         row["www"] = website or row.get("www", "")
         row["contact_source"] = "serper_bs4"
         row["maps_contact_rejected"] = "yes"
@@ -4289,6 +4551,29 @@ def row_within_region_km(row: dict) -> bool:
     return location_within_region_km(blob, lat=lat_f, lon=lon_f)
 
 
+def _looks_like_postal_address(text: str) -> bool:
+    low = (text or "").lower()
+    if re.search(r"\b\d{2}-\d{3}\b", text or ""):
+        return True
+    markers = (
+        "ul.", "ul ", "al.", "al ", "pl.", "pl ", "os.", "rondo", "aleja",
+        "aleje", "plac", "skwer", "bulwar", "województwo", "wojewodztwo",
+    )
+    return any(marker in low for marker in markers)
+
+
+def _extract_serper_address(item: dict) -> str:
+    """Pełny adres z Serper — nie snippet SEO/produktowy."""
+    for key in ("address", "formattedAddress", "location", "vicinity"):
+        val = (item.get(key) or "").strip()
+        if val and (_looks_like_postal_address(val) or re.search(r"\d{2}-\d{3}", val)):
+            return val
+    snippet = (item.get("snippet") or "").strip()
+    if snippet and _looks_like_postal_address(snippet):
+        return snippet
+    return ""
+
+
 def discover_places_with_serper(
     term: str,
     logger: logging.Logger,
@@ -4371,17 +4656,18 @@ def discover_places_with_serper(
                     funnel["filtered_serper"] = funnel.get("filtered_serper", 0) + 1
                 continue
             title = (item.get("title") or "").strip()
-            snippet = (item.get("snippet") or item.get("address") or "").strip()
+            snippet = (item.get("snippet") or "").strip()
+            address = _extract_serper_address(item)
             if not candidate_filter(
                 url=link,
                 name=title,
-                text=f"{title} {snippet}",
+                text=f"{title} {snippet} {address}".strip(),
                 search_term=term,
             ):
                 if funnel is not None:
                     funnel["filtered_serper"] = funnel.get("filtered_serper", 0) + 1
                 continue
-            blob = " ".join([link, title, snippet])
+            blob = " ".join([link, title, snippet, address])
             if apply_location_filter and (
                 ENABLE_REGION_PLZ_FILTER or ENABLE_DISTANCE_FROM_REGION_KM
             ):
@@ -4410,8 +4696,8 @@ def discover_places_with_serper(
                     "ocena": "",
                     "liczba_opinii": "",
                     "kategoria": term,
-                    "adres": snippet,
-                    "full_address": snippet,
+                    "adres": address,
+                    "full_address": address,
                     "page_snippet": f"{title} {snippet}".strip(),
                     "status": "",
                     "telefon": item.get("phoneNumber") or item.get("phone") or "",
@@ -5376,7 +5662,7 @@ def enrich_row_with_contacts(
                 "email_status": "skipped_no_retail_proof",
             }
             row.update(extra)
-            contacts_cache[place_url] = {k: row.get(k) for k in extra if k in row}
+            contacts_cache[place_url] = _contact_cache_payload(row, extra)
             return normalize_row_company_name(row)
     elif website:
         row["retail_verified"] = True
@@ -5439,7 +5725,7 @@ def enrich_row_with_contacts(
             website, cache, purpose="contact"
         ) or collected.get("page_snippet") or ""
         if crawl_text.strip():
-            from claude_contact_extract import (
+            from pl_claude_contact_extract import (
                 claude_extract_contacts_from_pages,
                 merge_claude_contacts_into_collected,
             )
@@ -5454,6 +5740,10 @@ def enrich_row_with_contacts(
                 logger,
                 cache,
                 cache_key=place_url,
+                regex_candidates=collected.get("emails") or [],
+                impressum_candidates=collected.get("impressum_emails") or [],
+                regex_phones=collected.get("phones") or [],
+                extra_context=verify_context,
                 on_step=console_step,
             )
             if parsed and (parsed.get("emails") or parsed.get("phones")):
@@ -5516,7 +5806,7 @@ def enrich_row_with_contacts(
     }
     extra["contact_quality_score"] = compute_contact_quality_score({**row, **extra})
     row.update(extra)
-    contacts_cache[place_url] = extra
+    contacts_cache[place_url] = _contact_cache_payload(row, extra)
     return row
 
 
@@ -6196,8 +6486,9 @@ def _run_smoke_tests() -> None:
         == "by bioPress Verlag KG"
     )
     assert website_base_url("https://heger-store.de/referenz/x") == "https://heger-store.de"
-    assert extract_bundesland({"bundesland": "Sachsen"}) == "Sachsen"
-    assert extract_bundesland({"full_address": "04109 Leipzig"}) == "Sachsen"
+    assert extract_bundesland({"bundesland": "mazowieckie"}) == "mazowieckie"
+    assert extract_bundesland({"full_address": "00-001 Warszawa"}) == "mazowieckie"
+    assert extract_bundesland({"full_address": "30-001 Kraków"}) == "malopolskie"
     assert haversine_km(REGION_CENTER_LAT, REGION_CENTER_LON, REGION_CENTER_LAT, REGION_CENTER_LON) < 0.01
     assert location_within_region_km("Generalunternehmer Ladenbau Leipzig")
     assert location_within_region_km("Generalunternehmer München")

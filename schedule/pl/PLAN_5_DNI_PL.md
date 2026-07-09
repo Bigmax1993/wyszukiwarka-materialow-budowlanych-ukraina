@@ -1,6 +1,9 @@
 # Plan tygodniowy PL — +5h względem UA (brak nakładania pipeline)
 
 Kampania **PL materiały budowlane** (`pl_materialy_scraper.py`, `run_config/pl_materialy.json`).
+
+Dokumentacja techniczna: [`docs/PL_MATERIALY.md`](../../docs/PL_MATERIALY.md)
+
 Wysyłka **pon 14:00** + **wt 14:00** (2×300 maili/dzień). Maile po polsku, tel. **516513965**.
 
 ## Offset względem UA
@@ -23,12 +26,23 @@ Każdy etap PL startuje **5 godzin po** odpowiednim etapie UA — oba pipeline m
 ## Cykl tygodniowy
 
 ```
-Tydzień N (discovery PL):
-  pon 22:00 → wt 20:00 → śr 00:00 → czw 01:00 → pt 21:00   [pl-materialy-wyniki-pi]
+Tydzień N (discovery PL, serper-only):
+  pon 22:00 → wt 20:00 → czw 00:00 → pt 01:00 + 21:00   [pl-materialy-wyniki-pi]
 
 Tydzień N-1 (backfill + wysyłka):
   nd 10:30 → pon 11:00 sync → pon 12:00 prep → pon 14:00 send → wt 14:00 send
 ```
+
+### Discovery (pon–pt)
+
+- `--serper-only-discovery` — kandydaci bez pełnego crawla (status `pending_www_verify`)
+- `--respect-cache` (wt–pt) — oszczędza kontakty; row enrichment wygasa po TTL (7 dni)
+- Rotacja: 1 województwo / tydzień od `rotation_start_date` w config
+
+### Backfill (niedziela)
+
+- Pełny crawl www, weryfikacja Claude, uzupełnienie telefonów (`+48`) i e-maili
+- `--rebuild-from-cache` — odświeżony Excel
 
 ## GitHub Actions
 
@@ -45,10 +59,39 @@ Secret Drive: `GDRIVE_FOLDER_ID_PL` = `1O15CdN0TH8rx74sPP5C1GuYSweX81IGw`
 
 Folder: [PL Materialy — Google Drive](https://drive.google.com/drive/folders/1O15CdN0TH8rx74sPP5C1GuYSweX81IGw?usp=drive_link)
 
-Plik Excel: `pl_materialy_kontakte.xlsx` (wersjonowany z datą przy uploadzie).
+## Pliki wynikowe
+
+| Plik | Opis |
+|------|------|
+| `pl_materialy_kontakte.xlsx` | Excel kontaktów (append; wersjonowany z datą na Drive) |
+| `pl_materialy_cache.json` | Cache Serper, contacts, Claude, crawl |
+| `pl_materialy_wojewodztwo_rotation.json` | Stan rotacji województw |
+
+### Cache (`pl_enrichment_v2`)
+
+Po wdrożeniu nowej wersji kodu pierwszy run czyści stare buckety discovery/enrichment/crawl.
+TTL domyślnie **7 dni** (`claude_discovery_cache_days` w `run_config/pl_materialy.json`).
 
 ## Task Scheduler (Windows)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "schedule\pl\register_tasks_5_dni.ps1"
+```
+
+Skrypty w `schedule/pl/`:
+
+| Skrypt | Etap |
+|--------|------|
+| `run_poniedzialek_discovery.ps1` | Pon discovery (bez `--respect-cache`) |
+| `run_wtorek_discovery.ps1` … `run_piatek_discovery.ps1` | Kontynuacja z `--respect-cache` |
+| `run_niedziela_backfill.ps1` | Backfill + rebuild |
+| `run_poniedzialek_prep.ps1` | Prep przed wysyłką |
+| `run_poniedzialek_send.ps1`, `run_wtorek_send.ps1` | Wysyłka maili |
+
+## Testy
+
+```powershell
+python pl_materialy_scraper.py --test
+python -m unittest tests.test_pl_materialy_regression -v
+python -m pytest tests/test_pl_*.py tests/test_contact_extract_utils_pl.py -q
 ```

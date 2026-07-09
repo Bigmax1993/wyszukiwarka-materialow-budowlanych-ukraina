@@ -38,6 +38,14 @@ class PlInquiryEmailTest(unittest.TestCase):
         sig = build_inquiry_signature_pl()
         self.assertNotIn("+380", sig)
 
+    def test_no_de_phone_in_template(self):
+        body = build_fixed_material_inquiry_pl()
+        self.assertNotIn("+49", body)
+
+    def test_sender_name_polish(self):
+        self.assertTrue(DEFAULT_INQUIRY_SENDER_NAME_PL)
+        self.assertNotIn("Ukraine", DEFAULT_INQUIRY_SENDER_NAME_PL)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

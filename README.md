@@ -14,6 +14,7 @@ Repozytorium: [Bigmax1993/Wyszukiwarka-partnerow](https://github.com/Bigmax1993/
 |----------|---------|------|
 | **DE GU** (legacy) | `de_gu_bauunternehmen_scraper.py` | Generalunternehmer Filialbau DE |
 | **UA materiały** | `ua_materialy_scraper.py` | Hurtownie / składy budmatów Ukraina |
+| **PL materiały** | `pl_materialy_scraper.py` | Hurtownie / składy budmatów Polska |
 
 
 
@@ -80,7 +81,50 @@ powershell -ExecutionPolicy Bypass -File schedule\ua\register_tasks_5_dni.ps1
 
 ---
 
+### PL — materiały budowlane (Polska)
 
+Pipeline: **Serper (gl=pl) → crawl www → Claude verify (PL) → Excel → maile PL**.
+
+Szczegóły: [`docs/PL_MATERIALY.md`](docs/PL_MATERIALY.md)
+
+| Moduł | Plik |
+|-------|------|
+| Scraper | `pl_materialy_scraper.py` |
+| Frazy per województwo | `pl_wojewodztwo_keywords.py` |
+| Rotacja województw | `pl_wojewodztwo_rotation.py` |
+| Filtr dostawców | `pl_materialy_supplier_filter.py` |
+| Prompty Claude PL | `pl_claude_prompts.py` |
+| Contact extract PL | `pl_claude_contact_extract.py` |
+| Treść maila PL | `pl_materialy_inquiry_email_pl.py` |
+
+```powershell
+python pl_materialy_scraper.py --test
+python pl_materialy_scraper.py --run-config run_config\pl_materialy.json --serper-only-discovery --no-auto-email --rotate-wojewodztwo
+python pl_materialy_scraper.py --run-config run_config\pl_materialy.json --rebuild-from-cache
+python pl_materialy_scraper.py --rotation-status
+```
+
+Testy PL:
+
+```powershell
+python -m unittest tests.test_pl_materialy_regression -v
+python -m pytest tests/test_pl_materialy_integration.py tests/test_pl_claude_contact_extract.py tests/test_pl_claude_prompts.py tests/test_pl_cache.py tests/test_contact_extract_utils_pl.py tests/test_pl_inquiry_email_pl.py -q
+```
+
+Maile po polsku, tel. **516513965**. **Bez załączników**.
+
+Wyniki: `Wyniki/pl_materialy_cache.json`, `pl_materialy_kontakte.xlsx`.
+
+Harmonogram (+5h względem UA): [`schedule/pl/PLAN_5_DNI_PL.md`](schedule/pl/PLAN_5_DNI_PL.md)
+
+| Dzień | Godzina (PL) | GitHub Actions |
+|-------|--------------|----------------|
+| **Pon–Pt** | 22:00 / 20:00 / 00:00 / 01:00 / 21:00 | `PL discovery` |
+| **Niedziela** | 10:30 | `PL niedziela backfill` |
+| **Poniedziałek** | 11:00 / 12:00 / 14:00 | sync → prep → send |
+| **Wtorek** | 14:00 | `PL wtorek send` |
+
+---
 
 ### DE GU — Generalunternehmer (legacy)
 
@@ -290,7 +334,8 @@ powershell -ExecutionPolicy Bypass -File scripts\run_full_pipeline_gha.ps1 -Forc
 
 
 
-[`docs/GITHUB_ACTIONS.md`](docs/GITHUB_ACTIONS.md)
+[`docs/GITHUB_ACTIONS.md`](docs/GITHUB_ACTIONS.md) — GU, UA i **PL**
+
 
 
 
@@ -333,25 +378,20 @@ powershell -ExecutionPolicy Bypass -File scripts\run_full_pipeline_gha.ps1 -Forc
 
 
 ```
-
 ├── de_gu_bauunternehmen_scraper.py
-
+├── ua_materialy_scraper.py
+├── pl_materialy_scraper.py
 ├── gu_bundesland_rotation.py
-
+├── pl_wojewodztwo_rotation.py
 ├── libs/
-
-├── schedule/           # PLAN_5_DNI.md, register_tasks_5_dni.ps1
-
-├── run_config/
-
-├── assets/campaign/    # PPTX na runnerze GitHub
-
-├── scripts/            # gdrive_*, run_full_pipeline_gha.ps1, RUN_ALL_TESTS.ps1
-
+├── schedule/           # PLAN_5_DNI*.md, ua/, pl/
+├── run_config/         # pl_materialy.json, ua_materialy.json, …
+├── docs/               # GITHUB_ACTIONS.md, PL_MATERIALY.md, GOOGLE_DRIVE.md
+├── assets/campaign/    # PPTX na runnerze GitHub (GU)
+├── scripts/            # gdrive_*, RUN_ALL_TESTS.ps1
+├── tests/              # test_pl_*, test_ua_*, …
 ├── .github/workflows/
-
-└── docs/
-
+└── Wyniki/             # cache + Excel (lokalnie)
 ```
 
 

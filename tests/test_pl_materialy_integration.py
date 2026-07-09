@@ -82,7 +82,49 @@ def test_page_verify_prompt_polish_context():
         "Hurtownia materiałów budowlanych cement piasek Warszawa",
     )
     assert "is_gu" in p
+    assert "Polsce" in p or "polsk" in p.lower()
     assert "budowlane" in p.lower() or "materiał" in p.lower()
+
+
+def test_row_cleanup_prompt_polish():
+    from pl_claude_prompts import build_row_cleanup_prompt
+
+    p = build_row_cleanup_prompt(
+        company="Hurtownia Test sp. z o.o.",
+        address="ul. Test 1, 00-001 Warszawa",
+        phone="+48 22 123 45 67",
+        email="kontakt@test.pl",
+        website="https://test.pl",
+        states="mazowieckie, malopolskie",
+    )
+    assert "+48" in p
+    assert "województwo" in p.lower() or "bundesland" in p.lower()
+    assert "+380" not in p
+
+
+def test_run_config_pl_materialy_cache_and_claude_flags():
+    from scraper_run_config import load_run_config_file
+
+    data = load_run_config_file("run_config/pl_materialy.json", ROOT)
+    assert data.get("enable_claude_row_cleanup") is True
+    assert data.get("enable_claude_contact_extract") is True
+    assert data.get("claude_discovery_cache_days") == 7
+    assert data.get("geo_filter_enabled") is False
+
+
+def test_pl_module_uses_pl_contact_extract_not_de():
+    import inspect
+
+    source = inspect.getsource(scraper.enrich_row_with_contacts)
+    assert "pl_claude_contact_extract" in source
+    assert "from claude_contact_extract import" not in source
+
+
+def test_reconcile_prefers_website_phone_when_found():
+    row = {"telefon": "+48 11 111 11 11", "www": "https://hurt.pl"}
+    collected = {"website": "https://hurt.pl", "phones": ["+48 22 222 22 22"]}
+    out = scraper.reconcile_contact_sources(row, collected)
+    assert "222" in out["telefon"].replace(" ", "")
 
 
 def test_claude_inquiry_prompt_polish_and_phone():
