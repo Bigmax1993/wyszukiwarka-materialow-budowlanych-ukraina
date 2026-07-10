@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-src = ROOT / "de_gu_bauunternehmen_scraper.py"
+src = ROOT / "legacy" / "de_gu" / "de_gu_bauunternehmen_scraper.py"
 dst = ROOT / "ua_materialy_scraper.py"
 text = src.read_text(encoding="utf-8")
 

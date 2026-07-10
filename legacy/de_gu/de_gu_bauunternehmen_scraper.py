@@ -15,9 +15,9 @@ import sys
 from pathlib import Path
 
 _campaign = Path(__file__).resolve().parent
-CAMPAIGN_DIR = _campaign
-_repo = _campaign
-for _p in (_campaign / "libs", _campaign):
+CAMPAIGN_DIR = _campaign.parents[1]
+_repo = CAMPAIGN_DIR
+for _p in (_repo / "libs", _repo, _campaign):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 import kanbud_bootstrap as _kanbud_bootstrap

@@ -1,3 +1,8 @@
+$ErrorActionPreference = "Stop"
+if ($env:KANBUD_ALLOW_DE_GU_SCHEDULE -ne "1") {
+    Write-Error "DEPRECATED: harmonogram DE GU wylaczony z produkcji. Uzyj odpowiednika w schedule\ua\"
+    exit 1
+}
 # [Legacy] Przekierowanie na run_poniedzialek_send.ps1 (pon 12:00, partia 1).
 
 . "$PSScriptRoot\_common.ps1"

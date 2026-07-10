@@ -53,7 +53,14 @@ class ContactExtractUtilsTest(unittest.TestCase):
         self.assertEqual(normalize_phone_contact("2024"), "")
 
     def test_find_emails_uses_regex_only(self):
-        import de_gu_bauunternehmen_scraper as scraper
+        import importlib.util
+
+        scraper_path = ROOT / "legacy" / "de_gu" / "de_gu_bauunternehmen_scraper.py"
+        spec = importlib.util.spec_from_file_location(
+            "de_gu_bauunternehmen_scraper", scraper_path
+        )
+        scraper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(scraper)
 
         found = scraper.find_emails_in_text("Kontakt: info@beispiel-bau.de Impressum")
         self.assertIn("info@beispiel-bau.de", found)

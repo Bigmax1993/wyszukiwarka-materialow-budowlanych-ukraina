@@ -119,7 +119,14 @@ class ClaudePageVerifyIntegrationTest(unittest.TestCase):
         self.assertEqual(cache["claude_daily"]["2099-01-01"], cc.CLAUDE_DAILY_LIMIT)
 
     def test_wide_email_regex_50_chars_local(self):
-        import de_gu_bauunternehmen_scraper as scraper
+        import importlib.util
+
+        scraper_path = ROOT / "legacy" / "de_gu" / "de_gu_bauunternehmen_scraper.py"
+        spec = importlib.util.spec_from_file_location(
+            "de_gu_bauunternehmen_scraper", scraper_path
+        )
+        scraper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(scraper)
 
         local = "a" * 50
         email = f"{local}@example.de"
@@ -130,7 +137,14 @@ class ClaudePageVerifyIntegrationTest(unittest.TestCase):
         self.assertNotIn(too_long.lower(), found_long)
 
     def test_row_cleanup_claude_then_regex(self):
-        import de_gu_bauunternehmen_scraper as scraper
+        import importlib.util
+
+        scraper_path = ROOT / "legacy" / "de_gu" / "de_gu_bauunternehmen_scraper.py"
+        spec = importlib.util.spec_from_file_location(
+            "de_gu_bauunternehmen_scraper", scraper_path
+        )
+        scraper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(scraper)
 
         row = {
             "url": "https://beispiel-bau.de",

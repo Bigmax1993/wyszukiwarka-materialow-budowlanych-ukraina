@@ -1,3 +1,8 @@
+$ErrorActionPreference = "Stop"
+if ($env:KANBUD_ALLOW_DE_GU_SCHEDULE -ne "1") {
+    Write-Error "DEPRECATED: harmonogram DE GU wylaczony z produkcji. Uzyj odpowiednika w schedule\ua\"
+    exit 1
+}
 # WTOREK — wysylka partia 2 (reszta backlogu, limit 300/dzien).
 
 # Task Scheduler: wtorek 09:00

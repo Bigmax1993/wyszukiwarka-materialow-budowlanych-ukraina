@@ -1,5 +1,9 @@
 # Plan tygodniowy: poniedziałek–piątek discovery → niedziela → poniedziałek → wtorek
 
+> **DEPRECATED** — kampania DE GU wyłączona z produkcji (kod pozostaje w repo jako legacy).
+> Aktywny harmonogram: [`schedule/ua/PLAN_5_DNI_UA.md`](ua/PLAN_5_DNI_UA.md)
+> Task Scheduler UA: `schedule\ua\register_tasks_5_dni.ps1`
+
 Jeden **obrót** na **jedną falę** (1 Bundesland / tydzień, rotacja `--rotate-bundesland`).
 Wysyłka **pon 09:00** + **wt 09:00** (2×300 maili/dzień).
 

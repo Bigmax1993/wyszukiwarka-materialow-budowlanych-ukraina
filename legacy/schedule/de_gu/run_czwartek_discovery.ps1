@@ -1,6 +1,11 @@
-# SRODA — discovery czesc 3 (kontynuacja), bez wysylki maili.
+$ErrorActionPreference = "Stop"
+if ($env:KANBUD_ALLOW_DE_GU_SCHEDULE -ne "1") {
+    Write-Error "DEPRECATED: harmonogram DE GU wylaczony z produkcji. Uzyj odpowiednika w schedule\ua\"
+    exit 1
+}
+# CZWARTEK — discovery czesc 4 (kontynuacja), bez wysylki maili.
 
-# Task Scheduler: sroda 19:00
+# Task Scheduler: czwartek 20:00
 
 
 
@@ -24,13 +29,13 @@ if ($args.Count -gt 0 -and $args[0] -like "run_config\*") {
 
     $rest = @($args | Select-Object -Skip 1)
 
-    Write-Host "[SRODA] Discovery (reczny run_config): $config"
+    Write-Host "[CZWARTEK] Discovery (reczny run_config): $config"
 
     python de_gu_bauunternehmen_scraper.py --run-config $config @rest
 
 } else {
 
-    Write-Host "[SRODA] Discovery czesc 3: kontynuacja (--respect-cache)"
+    Write-Host "[CZWARTEK] Discovery czesc 4: kontynuacja (--respect-cache)"
 
     python de_gu_bauunternehmen_scraper.py --run-config run_config\mfg_gu_de.json --serper-only-discovery --no-auto-email --respect-cache @args
 

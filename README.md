@@ -2,7 +2,9 @@
 
 
 
-Repozytorium: [Bigmax1993/Wyszukiwarka-partnerow](https://github.com/Bigmax1993/Wyszukiwarka-partnerow) (private)
+Repozytorium: [Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina](https://github.com/Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina)
+
+**Kampanie produkcyjne:** UA materiały + PL materiały (GitHub Actions). DE GU — kod legacy, wyłączony z harmonogramu PC i CI.
 
 
 
@@ -12,7 +14,7 @@ Repozytorium: [Bigmax1993/Wyszukiwarka-partnerow](https://github.com/Bigmax1993/
 
 | Kampania | Scraper | Opis |
 |----------|---------|------|
-| **DE GU** (legacy) | `de_gu_bauunternehmen_scraper.py` | Generalunternehmer Filialbau DE |
+| **DE GU** (archiwum) | `legacy/de_gu/de_gu_bauunternehmen_scraper.py` | Wyłączony — patrz [`legacy/README.md`](legacy/README.md) |
 | **UA materiały** | `ua_materialy_scraper.py` | Hurtownie / składy budmatów Ukraina |
 | **PL materiały** | `pl_materialy_scraper.py` | Hurtownie / składy budmatów Polska |
 
@@ -126,7 +128,10 @@ Harmonogram (+5h względem UA): [`schedule/pl/PLAN_5_DNI_PL.md`](schedule/pl/PLA
 
 ---
 
-### DE GU — Generalunternehmer (legacy)
+### DE GU — Generalunternehmer (legacy, wyłączony z produkcji)
+
+Kod pozostaje w repo; harmonogram `schedule/run_*` i Task Scheduler `Kanbud_GU_*` są wyłączone.
+Produkcja: [`schedule/ua/`](schedule/ua/) + workflowy `ua_materialy_*.yml`.
 
 
 
@@ -151,17 +156,12 @@ Harmonogram (+5h względem UA): [`schedule/pl/PLAN_5_DNI_PL.md`](schedule/pl/PLA
 
 
 ```powershell
-
-git clone https://github.com/Bigmax1993/Wyszukiwarka-partnerow.git
-
-cd Wyszukiwarka-partnerow
-
+git clone https://github.com/Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina.git
+cd wyszukiwarka-materialow-budowlanych-ukraina
 pip install -r requirements.txt
-
 $env:KANBUD_PROJECT_ROOT = "$PWD\libs"
 
-python de_gu_bauunternehmen_scraper.py --test
-
+python ua_materialy_scraper.py --test
 ```
 
 
@@ -268,7 +268,7 @@ python de_gu_bauunternehmen_scraper.py --run-config run_config\welle_nrw_by_bw.j
 
 |-------|---------|
 
-| Serper | 1500 zapytań / dzień |
+| Serper | 1000 zapytań / dzień |
 
 | E-mail | 300 / dzień kalendarzowy, 2 / domena / dzień (pon 300 + wt 300) |
 

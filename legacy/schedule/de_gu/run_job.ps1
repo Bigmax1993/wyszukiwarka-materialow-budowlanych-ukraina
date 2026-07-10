@@ -1,3 +1,8 @@
+$ErrorActionPreference = "Stop"
+if ($env:KANBUD_ALLOW_DE_GU_SCHEDULE -ne "1") {
+    Write-Error "DEPRECATED: harmonogram DE GU wylaczony z produkcji. Uzyj odpowiednika w schedule\ua\"
+    exit 1
+}
 # [Legacy] Jednorazowy discovery — preferuj plan 5 dni (schedule/PLAN_5_DNI.md) lub --rotate-bundesland.
 # Uruchomienie kampanii GU o dowolnej godzinie (DISABLE_SEND_WINDOW=1).
 

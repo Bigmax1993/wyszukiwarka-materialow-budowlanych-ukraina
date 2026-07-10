@@ -25,8 +25,11 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install chromium --with-deps
 
-      - name: Smoke tests
-        run: python de_gu_bauunternehmen_scraper.py --test
+      - name: Smoke tests (UA materialy)
+        run: python ua_materialy_scraper.py --test
+
+      - name: Smoke tests (PL materialy)
+        run: python pl_materialy_scraper.py --test
 
       - name: Validate secrets (presence only)
         env:
@@ -47,4 +50,4 @@ jobs:
       - name: Dry-run email pipeline (bez wysylki SMTP)
         env:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
-        run: python de_gu_bauunternehmen_scraper.py --dry-run-email --send-emails-only
+        run: python ua_materialy_scraper.py --dry-run-email --send-emails-only

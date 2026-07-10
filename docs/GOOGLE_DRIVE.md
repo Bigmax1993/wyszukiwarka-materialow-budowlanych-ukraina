@@ -1,4 +1,32 @@
-# Google Drive — wyniki kampanii GU
+# Google Drive — wyniki kampanii
+
+## Kampania UA (materiały budowlane) — produkcja
+
+Utwórz folder na Drive (np. **UA Materialy Budowlane Wyniki**) i ustaw secret GitHub:
+
+| Secret | Opis |
+|--------|------|
+| `GDRIVE_FOLDER_ID_UA` | ID folderu Drive dla wyników UA |
+
+| Plik / folder | Opis |
+|---------------|------|
+| `ua_materialy_cache.json` | Cache Serper + kontakty |
+| `ua_materialy_kontakte.xlsx` | Excel kontaktów |
+| `ua_materialy_scraper.log` | Log |
+| `ua_materialy_oblast_rotation.json` | Stan rotacji obwodów |
+| `wyslane/*.eml` | Kopie wysłanych maili |
+
+| Sposób | Kiedy |
+|--------|--------|
+| **GitHub Actions** | Workflow `Sync wyniki Google Drive UA` (poniedziałek 06:00 PL) |
+| **Lokalnie** | `python scripts/gdrive_upload_wyniki.py --campaign ua` |
+| **PC + Drive for desktop** | `KANBUD_DATA_DIR` → folder `UA Materialy Budowlane Wyniki` |
+
+Artefakt źródłowy sync: `ua-materialy-wyniki-thu` (niedzielny backfill). Szczegóły: [`docs/GITHUB_ACTIONS.md`](GITHUB_ACTIONS.md).
+
+---
+
+## Kampania GU (legacy)
 
 Folder w chmurze: [GU Bauunternehmen](https://drive.google.com/drive/folders/1tP8oUi72t4EHDbE9GnHFdvfNtNsJe4xf)
 

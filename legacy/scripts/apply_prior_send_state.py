@@ -12,9 +12,11 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[2]
+LEGACY_GU = ROOT / "legacy" / "de_gu"
+for p in (str(ROOT), str(LEGACY_GU)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 import de_gu_bauunternehmen_scraper as scraper  # noqa: E402
 

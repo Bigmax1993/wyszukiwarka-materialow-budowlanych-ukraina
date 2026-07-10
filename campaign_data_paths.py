@@ -60,7 +60,7 @@ def _google_drive_bases() -> list[Path]:
     return bases
 
 
-def resolve_data_root(campaign_dir: Path, *, campaign: str = "gu") -> Path:
+def resolve_data_root(campaign_dir: Path, *, campaign: str = "ua") -> Path:
     """
     Katalog danych kampanii: Wyniki/, wyslane/.
     campaign: gu | ua | pl

@@ -1,34 +1,15 @@
-# GitHub Actions — kampania GU
+# GitHub Actions — kampanie UA i PL
 
+Repozytorium: [wyszukiwarka-materialow-budowlanych-ukraina](https://github.com/Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina)
 
+> **DE GU (legacy):** workflowy `de_gu_*.yml` **nie istnieją** w tym repo. Kod DE pozostaje lokalnie; harmonogram PC wyłączony — patrz [`schedule/PLAN_5_DNI.md`](../schedule/PLAN_5_DNI.md) (DEPRECATED).
 
-Repozytorium: [Wyszukiwarka-partnerow](https://github.com/Bigmax1993/Wyszukiwarka-partnerow)
-
-
-
-## Workflowy
-
-
+## Workflowy (aktywne)
 
 | Workflow | Plik | Trigger | Co robi |
-
 |----------|------|---------|---------|
-
-| **Tests** | `tests.yml` | push, PR | `py_compile` + smoke `--test` (GU, UA, PL) + pełna regresja |
-
-| **CI Deploy** | `ci-deploy.yml` | push | smoke + walidacja secretów + dry-run maili |
-
-| **GU discovery** | `de_gu_pi.yml` | cron, ręcznie | Discovery pon–pt (max 12 h/run) → `de-gu-wyniki-pi` |
-
-| **GU niedziela backfill** | `de_gu_thu.yml` | cron, ręcznie | Backfill + Excel → `de-gu-wyniki-thu` |
-
-| **GU poniedzialek prep** | `de_gu_mon.yml` | cron, ręcznie | Rebuild Excel → `de-gu-wyniki-mon` |
-
-| **GU poniedzialek send** | `de_gu_tue.yml` | cron, ręcznie | Wysyłka partia 1 (do 300) → `de-gu-wyniki-tue` |
-
-| **GU wtorek send** | `de_gu_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `de-gu-wyniki-fri` |
-
-| **Sync wyniki Google Drive** | `sync-google-drive.yml` | cron pon 06:00 PL, ręcznie | Upload `Wyniki/` na Drive |
+| **Tests** | `tests.yml` | push, PR | smoke `--test` (UA, PL) + regresja pytest |
+| **CI Deploy** | `ci-deploy.yml` | push | smoke UA+PL + walidacja secretów + dry-run maili UA |
 
 
 
@@ -78,94 +59,13 @@ Setup OAuth: `python scripts/gdrive_oauth_setup.py` — szczegóły w [`GOOGLE_D
 
 
 
-## Artifacty
-
-
+## Artefakty (UA — kampania produkcyjna)
 
 ```
-
-pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela→thu → sync Drive → pon prep→mon → pon send→tue → wt send→fri
-
+pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela→thu → sync Drive UA → pon prep→mon → pon send→tue → wt send→fri
 ```
 
-
-
-Poniedziałek 17:00 (discovery): `de-gu-wyniki-fri` → `de-gu-wyniki-pi` (nowy tydzień). Wtorek–piątek: kontynuacja z `pi`. Niedziela backfill: najnowszy `de-gu-wyniki-pi` (piątek). Poniedziałek rano: prep (07:00) przed wysyłką (09:00); wieczorem (17:00) start kolejnego tygodnia discovery.
-
-**Sync Drive** (pon 06:00 PL) pobiera **`de-gu-wyniki-thu`** z niedzielnego backfillu — kolejność: `thu` → `mon` → `tue` → `fri`. Nie używa `fri`/`tue` z poprzedniej wysyłki, dopóki istnieje `thu`.
-
-
-
-## Załącznik PPTX na runnerze
-
-
-
-Workflowy send ustawiają:
-
-
-
-`MFG_EMAIL_ATTACHMENT_PATH=assets/campaign/MFG_Referenzliste_Einzelhandel.pptx`
-
-
-
-Przed wysyłką workflow **pobiera świeży PPTX** ze Slides (`scripts/export_mfg_slides_attachment.py`).  
-Źródło: [Google Slides MFG](https://docs.google.com/presentation/d/1kBnp5x0pdgXZSPzVte9e92IUgn2A5gSe/edit) (OAuth `GDRIVE_OAUTH_*` na GHA).
-
-
-
-## Ręczne uruchomienie
-
-
-
-Pełny cykl (PC, czeka na każdy krok). Przy **timeout 720 min** discovery (status failure) skrypt **kontynuuje**, jeśli run zapisał artefakt `de-gu-wyniki-pi` (`-StrictDiscovery` = stare zachowanie, przerwij):
-
-
-
-```powershell
-
-powershell -ExecutionPolicy Bypass -File scripts\run_full_pipeline_gha.ps1 -ForceResend
-
-```
-
-
-
-Pojedyncze kroki (`gh`):
-
-
-
-```powershell
-
-gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow
-gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=mon
-gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=tue
-gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=wed
-gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=thu
-gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=fri
-gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f resume_artifact_run_id=RUN_ID
-
-gh workflow run "GU niedziela backfill" -R Bigmax1993/Wyszukiwarka-partnerow
-
-gh workflow run "Sync wyniki Google Drive" -R Bigmax1993/Wyszukiwarka-partnerow
-
-gh workflow run "GU poniedzialek prep" -R Bigmax1993/Wyszukiwarka-partnerow
-
-gh workflow run "GU poniedzialek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
-
-gh workflow run "GU wtorek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
-
-```
-
-
-
-Kolejność: discovery (pon–pt) → backfill → sync Drive → prep → pon send → wt send.
-
-Po piątkowym discovery (ręcznie):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\resume_pipeline_after_pi.ps1 -PiRunId RUN_ID
-```
-
----
+Szczegóły: sekcja **Kampania UA** poniżej. Skrypt `scripts/run_full_pipeline_gha.ps1` nadal odnosi się do GU (legacy) — do aktualizacji w PR #2.
 
 ## Kampania UA (materiały budowlane)
 
@@ -195,16 +95,16 @@ Dodatkowy secret: `GDRIVE_FOLDER_ID_UA` (osobny folder Drive dla wyników UA).
 Ręczne uruchomienie:
 
 ```powershell
-gh workflow run "UA discovery" -R Bigmax1993/Wyszukiwarka-partnerow
-gh workflow run "UA discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=mon
-gh workflow run "UA niedziela backfill" -R Bigmax1993/Wyszukiwarka-partnerow
-gh workflow run "Sync wyniki Google Drive UA" -R Bigmax1993/Wyszukiwarka-partnerow
-gh workflow run "UA poniedzialek prep" -R Bigmax1993/Wyszukiwarka-partnerow
-gh workflow run "UA poniedzialek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
-gh workflow run "UA wtorek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
+gh workflow run "UA discovery" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "UA discovery" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f discovery_phase=mon
+gh workflow run "UA niedziela backfill" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "Sync wyniki Google Drive UA" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "UA poniedzialek prep" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "UA poniedzialek send" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f force_resend=true
+gh workflow run "UA wtorek send" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f force_resend=true
 ```
 
-Concurrency: `ua-pipeline` (osobna grupa od `gu-pipeline` — obie kampanie mogą działać równolegle).
+Concurrency: `ua-pipeline` (równolegle z `pl-pipeline`).
 
 ---
 
@@ -249,16 +149,16 @@ Secret Drive: `GDRIVE_FOLDER_ID_PL` = `1O15CdN0TH8rx74sPP5C1GuYSweX81IGw`
 Ręczne uruchomienie:
 
 ```powershell
-gh workflow run "PL discovery" -R Bigmax1993/Wyszukiwarka-partnerow
-gh workflow run "PL discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=mon
-gh workflow run "PL niedziela backfill" -R Bigmax1993/Wyszukiwarka-partnerow
-gh workflow run "Sync wyniki Google Drive PL" -R Bigmax1993/Wyszukiwarka-partnerow
-gh workflow run "PL poniedzialek prep" -R Bigmax1993/Wyszukiwarka-partnerow
-gh workflow run "PL poniedzialek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
-gh workflow run "PL wtorek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
+gh workflow run "PL discovery" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "PL discovery" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f discovery_phase=mon
+gh workflow run "PL niedziela backfill" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "Sync wyniki Google Drive PL" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "PL poniedzialek prep" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "PL poniedzialek send" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f force_resend=true
+gh workflow run "PL wtorek send" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f force_resend=true
 ```
 
-Concurrency: `pl-pipeline` (równolegle z `ua-pipeline` i `gu-pipeline`).
+Concurrency: `pl-pipeline` (równolegle z `ua-pipeline`).
 
 Cache: po aktualizacji kodu wersja `pl_enrichment_v2` czyści stare buckety przy pierwszym `load_cache()` — szczegóły w [`PL_MATERIALY.md`](PL_MATERIALY.md#cache-json).
 
