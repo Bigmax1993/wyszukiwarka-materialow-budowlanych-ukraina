@@ -9,6 +9,7 @@ $Root = Split-Path $PSScriptRoot -Parent
 Set-Location $Root
 $env:KANBUD_PROJECT_ROOT = Join-Path $Root "libs"
 $env:PYTHONUTF8 = "1"
+$env:PYTHONPATH = $env:KANBUD_PROJECT_ROOT
 
 $failed = @()
 $passed = @()
