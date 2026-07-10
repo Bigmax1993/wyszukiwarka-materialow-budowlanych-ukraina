@@ -28,9 +28,6 @@ jobs:
       - name: Smoke tests (UA materialy)
         run: python ua_materialy_scraper.py --test
 
-      - name: Smoke tests (PL materialy)
-        run: python pl_materialy_scraper.py --test
-
       - name: Validate secrets (presence only)
         env:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}

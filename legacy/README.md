@@ -1,6 +1,6 @@
 # Legacy — kampania DE GU
 
-Kampania **DE Generalunternehmer (Filialbau)** wyłączona z produkcji. Aktywny pipeline: **UA** (`ua_materialy_scraper.py`) + **PL** (`pl_materialy_scraper.py`).
+Kampania **DE Generalunternehmer (Filialbau)** wyłączona z produkcji. Aktywny pipeline: **UA** (`ua_materialy_scraper.py`).
 
 ## Zawartość
 

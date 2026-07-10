@@ -30,18 +30,9 @@ jobs:
           python -m py_compile ua_materialy_scraper.py
           python -m py_compile ua_oblast_keywords.py
           python -m py_compile ua_materialy_inquiry_email_uk.py
-          python -m py_compile pl_materialy_scraper.py
-          python -m py_compile pl_wojewodztwo_keywords.py
-          python -m py_compile pl_materialy_inquiry_email_pl.py
-          python -m py_compile pl_claude_prompts.py
-          python -m py_compile pl_claude_contact_extract.py
-          python -m py_compile contact_extract_utils.py
 
       - name: Scraper smoke UA materialy (--test)
         run: python ua_materialy_scraper.py --test
-
-      - name: Scraper smoke PL materialy (--test)
-        run: python pl_materialy_scraper.py --test
 
       - name: Regresja i testy UA (pytest + unittest)
         run: |
@@ -52,16 +43,8 @@ jobs:
             tests/test_ua_claude_inquiry_email.py \
             tests/test_ua_supplier_filter.py \
             tests/test_ua_materialy_integration.py \
-            -q
-
-      - name: Regresja i testy PL (pytest + unittest)
-        run: |
-          python -m unittest tests.test_pl_materialy_regression -v
-          python -m pytest \
-            tests/test_pl_inquiry_email_pl.py \
-            tests/test_pl_materialy_integration.py \
-            tests/test_pl_claude_contact_extract.py \
-            tests/test_pl_claude_prompts.py \
-            tests/test_pl_cache.py \
-            tests/test_contact_extract_utils_pl.py \
+            tests/test_ua_email_targeting.py \
+            tests/test_ua_claude_contact_extract.py \
+            tests/test_ua_contact_pipeline_integration.py \
+            tests/test_repo_isolation.py \
             -q

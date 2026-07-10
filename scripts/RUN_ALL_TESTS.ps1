@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-Pelna bateria testow lokalnych (UA + PL, zgodnie z tests.yml).
+Pelna bateria testow lokalnych (UA, zgodnie z tests.yml).
 
   powershell -ExecutionPolicy Bypass -File scripts\RUN_ALL_TESTS.ps1
 #>
@@ -41,14 +41,8 @@ Test-Step "py_compile (aktywne moduly, bez legacy/)" {
 
 Test-Step "smoke --test (UA materialy)" { python ua_materialy_scraper.py --test }
 
-Test-Step "smoke --test (PL materialy)" { python pl_materialy_scraper.py --test }
-
 Test-Step "regresja UA materialy" {
     python -m unittest tests.test_ua_materialy_regression -v
-}
-
-Test-Step "regresja PL materialy" {
-    python -m unittest tests.test_pl_materialy_regression -v
 }
 
 Test-Step "pytest UA (jednostkowe + integracyjne)" {
@@ -61,17 +55,6 @@ Test-Step "pytest UA (jednostkowe + integracyjne)" {
         tests/test_ua_email_targeting.py `
         tests/test_ua_claude_contact_extract.py `
         tests/test_ua_contact_pipeline_integration.py `
-        -q
-}
-
-Test-Step "pytest PL (jednostkowe + integracyjne)" {
-    python -m pytest `
-        tests/test_pl_inquiry_email_pl.py `
-        tests/test_pl_materialy_integration.py `
-        tests/test_pl_claude_contact_extract.py `
-        tests/test_pl_claude_prompts.py `
-        tests/test_pl_cache.py `
-        tests/test_contact_extract_utils_pl.py `
         -q
 }
 
@@ -117,4 +100,4 @@ if ($failed.Count) {
     $failed | ForEach-Object { Write-Host "  - $_" }
     exit 1
 }
-Write-Host "Wszystkie testy OK (UA + PL)" -ForegroundColor Green
+Write-Host "Wszystkie testy OK (UA)" -ForegroundColor Green

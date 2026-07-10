@@ -126,22 +126,3 @@ Alternatywy (lokalnie / fallback):
 | `GDRIVE_IMPERSONATE_EMAIL` | E-mail użytkownika Workspace — delegacja DWD (opcjonalnie) |
 | `KANBUD_GOOGLE_DRIVE_GU_PATH` | Lokalna ścieżka Drive for desktop |
 
----
-
-## Kampania PL — folder Drive
-
-Folder: [PL Materialy](https://drive.google.com/drive/folders/1O15CdN0TH8rx74sPP5C1GuYSweX81IGw)
-
-ID: `1O15CdN0TH8rx74sPP5C1GuYSweX81IGw` (secret `GDRIVE_FOLDER_ID_PL`)
-
-| Plik | Opis |
-|------|------|
-| `pl_materialy_cache.json` | Cache (wersja `pl_enrichment_v2`) |
-| `pl_materialy_kontakte.xlsx` | Excel kontaktów |
-| `pl_materialy_scraper.log` | Log |
-| `wyslane/*.eml` | Kopie wysłanych maili |
-
-Workflow: **Sync wyniki Google Drive PL** (poniedziałek **11:00** PL). Artefakt źródłowy: `pl-materialy-wyniki-thu` (niedzielny backfill).
-
-Szczegóły kampanii: [`PL_MATERIALY.md`](PL_MATERIALY.md)
-
