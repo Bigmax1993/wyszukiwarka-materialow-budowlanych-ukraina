@@ -89,7 +89,7 @@ pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela→thu → sync 
 **Wznowienie discovery:**
 
 ```powershell
-gh workflow run "UA discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f resume_artifact_run_id=RUN_ID
+gh workflow run "UA discovery" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f resume_artifact_run_id=RUN_ID
 ```
 
-Porównanie z harmonogramem DE GU: [`PLAN_5_DNI.md`](PLAN_5_DNI.md).
+Porównanie z harmonogramem DE GU: [`legacy/schedule/de_gu/PLAN_5_DNI.md`](../../legacy/schedule/de_gu/PLAN_5_DNI.md).

@@ -75,7 +75,7 @@ commit_rotation_after_run(p, s, oblast)
 "@
 }
 
-Test-Step "ua_materialy — brak zalacznikow i MFG" {
+Test-Step "ua_materialy - brak zalacznikow i MFG" {
     python -c @"
 from ua_materialy_inquiry_email_uk import DEFAULT_INQUIRY_PHONE_UK, build_fixed_material_inquiry_uk
 import ua_materialy_scraper as ua
