@@ -135,14 +135,6 @@ jobs:
             Wyniki/
             wyslane/
 
-      - name: Chain — niedziela backfill (piatek)
-        if: success() && steps.prev_run.outputs.phase == 'fri'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          bash scripts/gha_chain_workflow.sh "UA niedziela backfill" \
-            "artifact_run_id=${{ github.run_id }}"
-
       - name: Wznow po timeout
         if: cancelled() && steps.prev_run.outputs.phase != ''
         env:
