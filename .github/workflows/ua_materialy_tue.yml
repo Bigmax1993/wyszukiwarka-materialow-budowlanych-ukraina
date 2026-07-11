@@ -22,7 +22,7 @@ on:
         default: false
 
 permissions:
-  actions: write
+  actions: read
   contents: read
 
 concurrency:
@@ -98,9 +98,3 @@ jobs:
           path: |
             Wyniki/
             wyslane/
-
-      - name: Chain — wtorek send
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/gha_chain_workflow.sh "UA wtorek send"
