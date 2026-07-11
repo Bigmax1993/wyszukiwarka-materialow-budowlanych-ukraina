@@ -76,36 +76,15 @@ jobs:
           run-id: ${{ steps.artifact_run.outputs.run-id }}
           path: .
 
-      - name: Validate GDRIVE credentials
+      - name: Validate GDRIVE credentials and folder
         env:
           GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
           GDRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GDRIVE_OAUTH_REFRESH_TOKEN }}
           GDRIVE_OAUTH_CLIENT_ID: ${{ secrets.GDRIVE_OAUTH_CLIENT_ID }}
           GDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.GDRIVE_OAUTH_CLIENT_SECRET }}
-        run: |
-          python -c "
-          import os, json, sys
-          if not (os.environ.get('GDRIVE_FOLDER_ID') or '').strip():
-              print('::warning::GDRIVE_FOLDER_ID_UA nie ustawione — upload moze nie dzialac')
-          refresh = (os.environ.get('GDRIVE_OAUTH_REFRESH_TOKEN') or '').strip()
-          cid = (os.environ.get('GDRIVE_OAUTH_CLIENT_ID') or '').strip()
-          csec = (os.environ.get('GDRIVE_OAUTH_CLIENT_SECRET') or '').strip()
-          if refresh and cid and csec:
-              print('OK: OAuth (upload na Moj dysk)')
-              sys.exit(0)
-          raw = (os.environ.get('GDRIVE_SERVICE_ACCOUNT_JSON') or '').strip()
-          if not raw:
-              print('BLAD: Ustaw OAuth (GDRIVE_OAUTH_*) LUB konto uslugowego + Shared Drive')
-              sys.exit(1)
-          if raw.startswith('AIza'):
-              print('BLAD: GDRIVE_SERVICE_ACCOUNT_JSON to klucz API, nie JSON konta uslugowego')
-              sys.exit(1)
-          j = json.loads(raw)
-          if j.get('type') != 'service_account':
-              print('BLAD: niepoprawny JSON konta uslugowego')
-              sys.exit(1)
-          print('OK:', j.get('client_email'))
-          "
+          GDRIVE_IMPERSONATE_EMAIL: ${{ secrets.GDRIVE_IMPERSONATE_EMAIL }}
+          GDRIVE_SHARED_DRIVE_ID: ${{ secrets.GDRIVE_SHARED_DRIVE_ID }}
+        run: python scripts/gdrive_upload_wyniki.py --campaign ua --verify-only
 
       - name: Upload Wyniki to Google Drive
         env:
