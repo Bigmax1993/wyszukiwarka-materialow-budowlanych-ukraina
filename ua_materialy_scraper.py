@@ -978,7 +978,9 @@ def handle_serper_api_failure(
 
 # Faza 6: e.K. / GbR — małe GU bez GmbH (bez fałszywego trafienia e.Kfm.)
 _COMPANY_LEGAL_FORM_PATTERN = (
-    r"(?:GmbH|UG(?:\s*\(haftungsbeschränkt\))?|AG|"
+    r"(?:"
+    r"ТОВ|ПП|ФОП|ПАТ|ПрАТ|ДП|КП|СПД|"
+    r"GmbH|UG(?:\s*\(haftungsbeschränkt\))?|AG|"
     r"GbR\.?|"
     r"e\.?\s*K\.(?=\s|$)|"
     r"e\.?\s*K(?=\s|$)|"
@@ -1051,6 +1053,18 @@ _COMPANY_NAME_HARD_REJECT_MARKERS = (
     "microsoft",
     "word ",
     "excel ",
+    "service unavailable",
+    "advanced search",
+    "грн/м",
+    "грн/кг",
+    "від ",
+    "купити ",
+    "купить ",
+    "лидери продаж",
+    "лідери продаж",
+    "асортимент інтернет",
+    "advanced search",
+    "unavailable",
 )
 
 _COMPANY_NAME_SOFT_REJECT_IF_NO_LEGAL_FORM = (
@@ -1356,16 +1370,20 @@ def enrich_row_with_claude_cleanup(row: dict, logger: logging.Logger, cache: dic
         row = apply_regex_row_contact_cleanup(row)
         return finalize_row_for_excel_tables(row)
 
-    cleaned_name = finalize_company_name_for_export(
-        parsed.get("company_name_clean", ""),
-        fallback_raw=company,
-        website=website,
-        email=email,
-    )
+    llm_name = sanitize_special_text(parsed.get("company_name_clean", ""))
+    if not llm_name:
+        cleaned_name = ""
+    else:
+        cleaned_name = finalize_company_name_for_export(
+            llm_name,
+            fallback_raw=company,
+            website=website,
+            email=email,
+        )
     claude_result = {
         "company_name_clean": cleaned_name,
-        "address": sanitize_special_text(parsed.get("address", address)) or address,
-        "phone": sanitize_special_text(parsed.get("phone", phone)) or phone,
+        "address": sanitize_special_text(parsed.get("address", "")),
+        "phone": sanitize_special_text(parsed.get("phone", "")),
         "website": sanitize_special_text(parsed.get("website", website)) or website,
         "bundesland": sanitize_special_text(parsed.get("bundesland", "")),
         "handelsketten": format_handelsketten_for_excel(
