@@ -13,7 +13,7 @@ on:
       timezone: Europe/Warsaw
 
 permissions:
-  actions: write
+  actions: read
   contents: read
 
 env:
@@ -118,9 +118,3 @@ jobs:
         run: |
           mkdir -p Wyniki wyslane 2>/dev/null || true
           python scripts/gdrive_upload_wyniki.py --campaign-dir . --campaign ua
-
-      - name: Chain — poniedzialek prep
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/gha_chain_workflow.sh "UA poniedzialek prep"
