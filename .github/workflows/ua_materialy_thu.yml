@@ -26,6 +26,9 @@ env:
   CLAUDE_UNLIMITED: "1"
   KANBUD_PROJECT_ROOT: ${{ github.workspace }}/libs
   UA_REGIONAL_INQUIRY_EMAIL_FROM: "2026-07-13"
+
+jobs:
+  backfill:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
