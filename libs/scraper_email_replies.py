@@ -1082,7 +1082,7 @@ def apply_reply_to_contact(
         pdf_text=pdf_text,
         pdf_source=pdf_source,
         lang=lang,
-        gemini_cache=gemini_cache,
+        claude_cache=gemini_cache,
     )
     reply_status = analyzed.get("reply_status") or reply_status
     contact["reply_status"] = reply_status
