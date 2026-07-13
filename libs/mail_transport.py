@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Wspólna warstwa poczty: yagmail (Gmail / SMTP) + archiwum IMAP i lokalne .eml.
+Wspólna warstwa poczty: yagmail (Gmail) + archiwum IMAP i lokalne .eml.
 """
 from __future__ import annotations
 
@@ -37,8 +37,8 @@ from scraper_env import (
     get_mail_user,
 )
 
-_DEFAULT_HOMEPL_SMTP = "serwer.home.pl"
-_DEFAULT_HOMEPL_IMAP = "serwer.home.pl"
+_DEFAULT_GMAIL_SMTP = "smtp.gmail.com"
+_DEFAULT_GMAIL_IMAP = "imap.gmail.com"
 _DEFAULT_SMTP_PORT_SSL = 465
 _DEFAULT_SMTP_PORT_STARTTLS = 587
 _DEFAULT_IMAP_PORT_SSL = 993
@@ -60,25 +60,19 @@ def get_smtp_host() -> str:
     host = get_env_value(ENV_SMTP_HOST).strip()
     if host:
         return host
-    if _is_gmail_address(_mail_address()):
-        return "smtp.gmail.com"
-    return _DEFAULT_HOMEPL_SMTP
+    return _DEFAULT_GMAIL_SMTP
 
 
 def get_imap_host() -> str:
     host = get_env_value(ENV_IMAP_HOST).strip()
     if host:
         return host
-    if _is_gmail_address(_mail_address()):
-        return "imap.gmail.com"
-    return _DEFAULT_HOMEPL_IMAP
+    return _DEFAULT_GMAIL_IMAP
 
 
 def mail_provider_label() -> str:
     smtp = get_smtp_host().lower()
     addr = _mail_address()
-    if "home.pl" in smtp or (addr and addr.endswith("@home.pl")):
-        return "home.pl"
     if _is_gmail_address(addr) or "gmail" in smtp:
         return "Gmail"
     if smtp:

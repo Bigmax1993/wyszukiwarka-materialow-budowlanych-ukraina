@@ -4,11 +4,10 @@ Wspólne nazwy zmiennych środowiskowych (identyczne jak w PowerShell User/Machi
 
 Ustawienie na stałe (PowerShell):
   [System.Environment]::SetEnvironmentVariable("SERPER_API_KEY", "...", "User")
-  [System.Environment]::SetEnvironmentVariable("MAIL_USER", "twoj@domena.pl", "User")
-  [System.Environment]::SetEnvironmentVariable("MAIL_PASSWORD", "...", "User")
-  [System.Environment]::SetEnvironmentVariable("SMTP_HOST", "serwer.home.pl", "User")
-  [System.Environment]::SetEnvironmentVariable("IMAP_HOST", "serwer.home.pl", "User")
-  # Opcjonalnie (stare nazwy nadal działają): GMAIL_USER, GMAIL_APP_PASSWORD, GMAIL_SENDER_NAME
+  [System.Environment]::SetEnvironmentVariable("MAIL_USER", "twoj@gmail.com", "User")
+  [System.Environment]::SetEnvironmentVariable("MAIL_PASSWORD", "haslo-aplikacji-google", "User")
+  [System.Environment]::SetEnvironmentVariable("MAIL_SENDER_NAME", "Imie Nazwisko", "User")
+  # Aliasy (opcjonalnie): GMAIL_USER, GMAIL_APP_PASSWORD, GMAIL_SENDER_NAME
 """
 from __future__ import annotations
 
