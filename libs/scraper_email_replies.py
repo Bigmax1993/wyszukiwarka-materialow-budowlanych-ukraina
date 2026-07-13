@@ -50,6 +50,8 @@ REMINDER_SEND_DELAY_MAX = 58
 # Kampania UA: przypomnienia co 3 dni (nie godzin)
 UA_REMINDER_INTERVAL_DAYS = 3
 UA_REMINDER_INTERVAL_HOURS = UA_REMINDER_INTERVAL_DAYS * 24.0
+# UA: jedno przypomnienie, liczone od email_sent_at (pierwszego zapytania)
+UA_MAX_REMINDERS_PER_CONTACT = 1
 SEND_WINDOW_START = 8
 SEND_WINDOW_END = 18
 
@@ -1522,15 +1524,55 @@ def _parse_dt(raw: str | None) -> datetime | None:
         return None
 
 
-def reminder_count(contact: dict) -> int:
-    """Ile przypomnień już wysłano (0–2)."""
+def had_reply_within_days_of_sent(contact: dict, days: float) -> bool:
+    """
+    True jeśli odbiorca odpowiedział przed upływem ``days`` od email_sent_at.
+    Gdy brak reply_at, ale jest ślad odpowiedzi — traktuj jako blokujące (bezpiecznie).
+    """
+    if not contact_has_inbound_reply(contact):
+        return False
+    sent_at = _parse_sent_at(contact)
+    reply_at = _parse_dt(contact.get("reply_at"))
+    if sent_at and reply_at:
+        return reply_at < sent_at + timedelta(days=float(days))
+    return True
+
+
+def get_ua_pending_reminder_number(
+    contact: dict,
+    *,
+    min_days: float | None = None,
+) -> int | None:
+    """
+    UA: jedno przypomnienie dopiero po min_days od pierwszego maila (email_sent_at).
+    Pomija kontakty z odpowiedzią w tym oknie (i każdą inną odpowiedź).
+    """
+    if min_days is None:
+        min_days = UA_REMINDER_INTERVAL_DAYS
+    min_hours = float(min_days) * 24.0
+
+    if contact_has_any_reply(contact) or had_reply_within_days_of_sent(contact, min_days):
+        suppress_reminders_for_replied_contact(contact)
+        return None
+
+    return get_pending_reminder_number(
+        contact,
+        first_after_hours=min_hours,
+        second_after_hours=min_hours,
+        max_reminders=UA_MAX_REMINDERS_PER_CONTACT,
+    )
+
+
+def reminder_count(contact: dict, *, max_reminders: int | None = None) -> int:
+    """Ile przypomnień już wysłano."""
+    cap = MAX_REMINDERS_PER_CONTACT if max_reminders is None else int(max_reminders)
     raw = contact.get("reminder_count")
     if raw is not None and str(raw).strip() != "":
         try:
-            return max(0, min(int(raw), MAX_REMINDERS_PER_CONTACT))
+            return max(0, min(int(raw), cap))
         except (TypeError, ValueError):
             pass
-    if contact.get("reminder_2_sent_at"):
+    if cap >= 2 and contact.get("reminder_2_sent_at"):
         return 2
     if contact.get("reminder_sent_at"):
         return 1
@@ -1542,15 +1584,17 @@ def get_pending_reminder_number(
     *,
     first_after_hours: float | None = None,
     second_after_hours: float | None = None,
+    max_reminders: int | None = None,
 ) -> int | None:
     """
-    1 = pierwsze przypomnienie (min. 3 h po zapytaniu),
-    2 = drugie (min. 2 h po pierwszym), max 2 łącznie na email_target.
-  """
+    1 = pierwsze przypomnienie po first_after_hours od zapytania,
+    2 = drugie po second_after_hours od pierwszego przypomnienia (kampanie PL/DE).
+    """
     if first_after_hours is None:
         first_after_hours = REMINDER_1_HOURS_AFTER_SENT
     if second_after_hours is None:
         second_after_hours = REMINDER_2_HOURS_AFTER_FIRST
+    cap = MAX_REMINDERS_PER_CONTACT if max_reminders is None else int(max_reminders)
 
     if contact.get("reminders_suppressed"):
         return None
@@ -1562,8 +1606,8 @@ def get_pending_reminder_number(
     if not (contact.get("email_target") or "").strip():
         return None
 
-    count = reminder_count(contact)
-    if count >= MAX_REMINDERS_PER_CONTACT:
+    count = reminder_count(contact, max_reminders=cap)
+    if count >= cap:
         return None
 
     now = datetime.now()
@@ -1578,7 +1622,7 @@ def get_pending_reminder_number(
             return None
         return 1
 
-    if count == 1:
+    if count == 1 and cap >= 2:
         first_at = _parse_dt(contact.get("reminder_sent_at"))
         if not first_at:
             return None
@@ -1594,6 +1638,7 @@ def needs_reminder(
     min_hours: float | None = None,
     *,
     second_after_hours: float | None = None,
+    max_reminders: int | None = None,
 ) -> bool:
     """True jeśli należy wysłać kolejne przypomnienie (1. lub 2.)."""
     if min_hours is None:
@@ -1604,8 +1649,14 @@ def needs_reminder(
         contact,
         first_after_hours=min_hours,
         second_after_hours=second_after_hours,
+        max_reminders=max_reminders,
     )
     return pending is not None
+
+
+def ua_needs_reminder(contact: dict, min_days: float | None = None) -> bool:
+    """UA: jedno przypomnienie po min_days od pierwszego maila, bez odpowiedzi w tym oknie."""
+    return get_ua_pending_reminder_number(contact, min_days=min_days) is not None
 
 
 def mark_reminder_sent(contact: dict, which: int) -> None:
@@ -2103,32 +2154,60 @@ def verify_sent_contacts_from_imap(
     return updated
 
 
+def iter_ua_reminder_candidates(
+    cache: dict,
+    min_days: float | None = None,
+    *,
+    messages: list | None = None,
+    config: ReplySyncConfig | None = None,
+    logger: logging.Logger | None = None,
+) -> list[tuple[str, dict, str]]:
+    """Kandydaci UA: jedno przypomnienie po min_days od email_sent_at."""
+    if min_days is None:
+        min_days = UA_REMINDER_INTERVAL_DAYS
+    if messages is not None and config is not None:
+        verify_sent_contacts_from_imap(cache, config, messages, logger)
+    out: list[tuple[str, dict, str]] = []
+    for place_url, info in (cache.get("contacts") or {}).items():
+        if not isinstance(info, dict):
+            continue
+        target = (info.get("email_target") or "").strip()
+        if not target:
+            continue
+        if ua_needs_reminder(info, min_days=min_days):
+            out.append((place_url, info, target))
+    return out
+
+
 def iter_reminder_candidates(
     cache: dict,
     min_hours: float | None = None,
     *,
     second_after_hours: float | None = None,
+    max_reminders: int | None = None,
     messages: list | None = None,
     config: ReplySyncConfig | None = None,
     logger: logging.Logger | None = None,
 ) -> list[tuple[str, dict, str]]:
-    """[(place_url, contact, email_target), ...] — po weryfikacji IMAP jeśli podano messages."""
+    """[(place_url, contact, email_target), ...] — kampanie PL/DE (do 2 przypomnień)."""
     if min_hours is None:
         min_hours = DEFAULT_REMINDER_MIN_HOURS
     if second_after_hours is None:
         second_after_hours = min_hours
     if messages is not None and config is not None:
         verify_sent_contacts_from_imap(cache, config, messages, logger)
-    out = []
-    contacts = cache.get("contacts") or {}
-    for place_url, info in contacts.items():
+    out: list[tuple[str, dict, str]] = []
+    for place_url, info in (cache.get("contacts") or {}).items():
         if not isinstance(info, dict):
             continue
         target = (info.get("email_target") or "").strip()
         if not target:
             continue
         if needs_reminder(
-            info, min_hours, second_after_hours=second_after_hours
+            info,
+            min_hours,
+            second_after_hours=second_after_hours,
+            max_reminders=max_reminders,
         ):
             out.append((place_url, info, target))
     return out

@@ -41,7 +41,7 @@ Kampania PL (osobne repo): [wyszukiwarka-materialow-budowlanych-polska](https://
 Skrypt `ua_sync_replies_and_reminders.py`:
 
 1. Skanuje INBOX (IMAP) i aktualizuje cache (`reply_at`, `has_reply`, ceny…).
-2. Wysyła max. **2 przypomnienia** (język ukraiński) do firm bez odpowiedzi — min. **3 dni** po zapytaniu / poprzednim przypomnieniu.
+2. Wysyła max. **1 przypomnienie** (język ukraiński) do firm bez odpowiedzi — min. **3 dni** po **pierwszym** zapytaniu (`email_sent_at`). Odpowiedź w ciągu tych 3 dni = pominięcie.
 
 ```powershell
 python ua_sync_replies_and_reminders.py              # podgląd

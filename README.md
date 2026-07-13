@@ -24,6 +24,8 @@ Kampania siostrzana (Polska): [wyszukiwarka-materialow-budowlanych-polska](https
 
 Maile: Claude Sonnet, język ukraiński, **bez załączników**. Nadawca: `MAIL_SENDER_NAME` (domyślnie Свінчак Максим), tel. `+380977091141`.
 
+Przypomnienia: **jedno** — dopiero po **3 dniach** od pierwszego maila; pomijane, jeśli odpowiedź przyszła w tym oknie.
+
 Wyniki: `Wyniki/ua_materialy_cache.json`, `ua_materialy_kontakte.xlsx`, `ua_materialy_oblast_rotation.json`.
 
 ---
@@ -91,7 +93,7 @@ python ua_sync_replies_and_reminders.py              # podgląd (IMAP + lista ka
 python ua_sync_replies_and_reminders.py --send       # wysyłka przypomnień UA
 ```
 
-IMAP wymaga tych samych `MAIL_USER` / `MAIL_PASSWORD` co wysyłka. Max 2 przypomnienia na firmę, min. 3 dni od zapytania lub poprzedniego przypomnienia.
+IMAP wymaga tych samych `MAIL_USER` / `MAIL_PASSWORD` co wysyłka. **Jedno** przypomnienie na firmę, min. **3 dni** od pierwszego zapytania; odpowiedź w tym czasie = brak przypomnienia.
 
 ---
 

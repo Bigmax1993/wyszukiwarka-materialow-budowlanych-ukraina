@@ -13,15 +13,17 @@ if str(LIBS) not in sys.path:
     sys.path.insert(0, str(LIBS))
 
 from scraper_email_replies import (  # noqa: E402
+    UA_MAX_REMINDERS_PER_CONTACT,
     UA_REMINDER_INTERVAL_DAYS,
     UA_REMINDER_INTERVAL_HOURS,
     backfill_reminder_suppression_for_replies,
     build_reminder_email,
     contact_has_any_reply,
-    get_pending_reminder_number,
-    needs_reminder,
+    get_ua_pending_reminder_number,
+    had_reply_within_days_of_sent,
     reply_status_label,
     suppress_reminders_for_replied_contact,
+    ua_needs_reminder,
 )
 
 
@@ -64,6 +66,7 @@ class TestUaReminderTiming(unittest.TestCase):
     def test_interval_constants(self):
         self.assertEqual(UA_REMINDER_INTERVAL_DAYS, 3)
         self.assertEqual(UA_REMINDER_INTERVAL_HOURS, 72.0)
+        self.assertEqual(UA_MAX_REMINDERS_PER_CONTACT, 1)
 
     def test_pending_after_3_days(self):
         contact = {
@@ -71,11 +74,8 @@ class TestUaReminderTiming(unittest.TestCase):
             "email_target": "info@test.ua",
             "email_sent_at": (datetime.now() - timedelta(days=4)).isoformat(timespec="seconds"),
         }
-        self.assertEqual(
-            get_pending_reminder_number(contact, first_after_hours=72, second_after_hours=72),
-            1,
-        )
-        self.assertTrue(needs_reminder(contact, 72))
+        self.assertEqual(get_ua_pending_reminder_number(contact, min_days=3), 1)
+        self.assertTrue(ua_needs_reminder(contact, min_days=3))
 
     def test_not_pending_before_3_days(self):
         contact = {
@@ -83,10 +83,32 @@ class TestUaReminderTiming(unittest.TestCase):
             "email_target": "info@test.ua",
             "email_sent_at": (datetime.now() - timedelta(days=1)).isoformat(timespec="seconds"),
         }
-        self.assertIsNone(
-            get_pending_reminder_number(contact, first_after_hours=72, second_after_hours=72)
-        )
-        self.assertFalse(needs_reminder(contact, 72))
+        self.assertIsNone(get_ua_pending_reminder_number(contact, min_days=3))
+        self.assertFalse(ua_needs_reminder(contact, min_days=3))
+
+    def test_no_reminder_when_reply_within_3_days(self):
+        sent = datetime.now() - timedelta(days=4)
+        contact = {
+            "email_status": "sent",
+            "email_target": "info@test.ua",
+            "email_sent_at": sent.isoformat(timespec="seconds"),
+            "reply_at": (sent + timedelta(days=2)).isoformat(timespec="seconds"),
+            "reply_status": "replied_with_price",
+        }
+        self.assertTrue(had_reply_within_days_of_sent(contact, 3))
+        self.assertIsNone(get_ua_pending_reminder_number(contact, min_days=3))
+        self.assertFalse(ua_needs_reminder(contact, min_days=3))
+        self.assertEqual(contact.get("email_status"), "replied")
+
+    def test_no_second_ua_reminder(self):
+        contact = {
+            "email_status": "reminder_sent",
+            "email_target": "info@test.ua",
+            "email_sent_at": (datetime.now() - timedelta(days=10)).isoformat(timespec="seconds"),
+            "reminder_sent_at": (datetime.now() - timedelta(days=5)).isoformat(timespec="seconds"),
+            "reminder_count": 1,
+        }
+        self.assertIsNone(get_ua_pending_reminder_number(contact, min_days=3))
 
     def test_no_reminder_when_reply(self):
         contact = {
@@ -96,34 +118,7 @@ class TestUaReminderTiming(unittest.TestCase):
             "reply_at": (datetime.now() - timedelta(days=2)).isoformat(timespec="seconds"),
             "has_reply": True,
         }
-        self.assertIsNone(get_pending_reminder_number(contact, first_after_hours=72))
-
-    def test_no_reminder_when_reply_before_3_days(self):
-        """Odpowiedź dzień po zapytaniu — bez przypomnienia."""
-        contact = {
-            "email_status": "sent",
-            "email_target": "info@test.ua",
-            "email_sent_at": (datetime.now() - timedelta(days=4)).isoformat(timespec="seconds"),
-            "reply_at": (datetime.now() - timedelta(days=3)).isoformat(timespec="seconds"),
-            "reply_status": "replied_with_price",
-        }
-        self.assertIsNone(get_pending_reminder_number(contact, first_after_hours=72))
-        self.assertFalse(needs_reminder(contact, 72, second_after_hours=72))
-        self.assertTrue(contact_has_any_reply(contact))
-
-    def test_no_second_reminder_after_reply_to_first(self):
-        contact = {
-            "email_status": "reminder_sent",
-            "email_target": "info@test.ua",
-            "email_sent_at": (datetime.now() - timedelta(days=10)).isoformat(timespec="seconds"),
-            "reminder_sent_at": (datetime.now() - timedelta(days=5)).isoformat(timespec="seconds"),
-            "reminder_count": 1,
-            "reply_at": (datetime.now() - timedelta(days=1)).isoformat(timespec="seconds"),
-            "reply_status": "replied_questions",
-        }
-        self.assertIsNone(
-            get_pending_reminder_number(contact, first_after_hours=72, second_after_hours=72)
-        )
+        self.assertIsNone(get_ua_pending_reminder_number(contact, min_days=3))
 
     def test_suppress_marks_replied_status(self):
         contact = {
@@ -135,9 +130,7 @@ class TestUaReminderTiming(unittest.TestCase):
         self.assertTrue(suppress_reminders_for_replied_contact(contact))
         self.assertEqual(contact["email_status"], "replied")
         self.assertTrue(contact["reminders_suppressed"])
-        self.assertFalse(
-            get_pending_reminder_number(contact, first_after_hours=72, second_after_hours=72)
-        )
+        self.assertIsNone(get_ua_pending_reminder_number(contact, min_days=3))
 
     def test_backfill_existing_replies(self):
         cache = {

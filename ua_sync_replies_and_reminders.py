@@ -3,7 +3,8 @@
 UA: odczyt odpowiedzi Gmail (IMAP) + przypomnienia do firm bez odpowiedzi.
 
 Harmonogram: co 3 dni (GitHub Actions lub Task Scheduler).
-Przypomnienie 1: min. 3 dni po pierwszym zapytaniu; przypomnienie 2: min. 3 dni po pierwszym przypomnieniu.
+Jedno przypomnienie: dopiero po 3 dniach od pierwszego maila (email_sent_at).
+Pomija firmy, które odpowiedziały w ciągu tych 3 dni (lub w ogóle).
 
 Domyślnie TRYB PODGLĄDU (bez wysyłki). Aby wysłać maile:
   python ua_sync_replies_and_reminders.py --send
@@ -31,7 +32,7 @@ from campaign_data_paths import campaign_output_paths  # noqa: E402
 from polish_text import setup_module_logging  # noqa: E402
 from scraper_email_replies import (  # noqa: E402
     DEFAULT_IMAP_FULL_SCAN_DAYS,
-    MAX_REMINDERS_PER_CONTACT,
+    UA_MAX_REMINDERS_PER_CONTACT,
     UA_REMINDER_INTERVAL_DAYS,
     UA_REMINDER_INTERVAL_HOURS,
     ReplySyncConfig,
@@ -41,8 +42,8 @@ from scraper_email_replies import (  # noqa: E402
     contact_has_any_reply,
     email_domain,
     fetch_imap_messages,
-    get_pending_reminder_number,
-    iter_reminder_candidates,
+    get_ua_pending_reminder_number,
+    iter_ua_reminder_candidates,
     load_cache,
     mark_reminder_sent,
     preset_to_config,
@@ -212,7 +213,7 @@ def main() -> int:
         "WYSYŁKA" if args.send else "PODGLĄD (dodaj --send)",
         args.min_days,
         min_hours,
-        MAX_REMINDERS_PER_CONTACT,
+        UA_MAX_REMINDERS_PER_CONTACT,
     )
 
     messages: list = []
@@ -236,10 +237,9 @@ def main() -> int:
         logger.info("Zaktualizowano z maili: %s kontakt(ów)", updated)
         backfill_reminder_suppression_for_replies(cache, logger)
 
-    candidates = iter_reminder_candidates(
+    candidates = iter_ua_reminder_candidates(
         cache,
-        min_hours,
-        second_after_hours=min_hours,
+        args.min_days,
         messages=messages if messages else None,
         config=config if messages else None,
         logger=logger if messages else None,
@@ -253,11 +253,7 @@ def main() -> int:
             or contact.get("company_name")
             or "?"
         )
-        rem_num = get_pending_reminder_number(
-            contact,
-            first_after_hours=min_hours,
-            second_after_hours=min_hours,
-        )
+        rem_num = get_ua_pending_reminder_number(contact, min_days=args.min_days)
         if not rem_num:
             continue
         if contact_has_any_reply(contact):
@@ -270,7 +266,14 @@ def main() -> int:
                 suppress_reminders_for_replied_contact(contact)
                 logger.info("  pominięto %s — wykryto odpowiedź w skrzynce", target)
                 continue
-        logger.info("  → %s (%s) — przypomnienie %s/%s", target, company, rem_num, MAX_REMINDERS_PER_CONTACT)
+        logger.info(
+            "  → %s (%s) — przypomnienie %s/%s (≥%.0f dni od pierwszego maila)",
+            target,
+            company,
+            rem_num,
+            UA_MAX_REMINDERS_PER_CONTACT,
+            args.min_days,
+        )
 
         if not args.send:
             continue
@@ -291,7 +294,7 @@ def main() -> int:
             subject,
             body,
             logger,
-            mail_type=f"przypomnienie UA {rem_num}/{MAX_REMINDERS_PER_CONTACT}",
+            mail_type=f"przypomnienie UA {rem_num}/{UA_MAX_REMINDERS_PER_CONTACT}",
             campaign=UA_CAMPAIGN_ID,
         )
         if ok:
