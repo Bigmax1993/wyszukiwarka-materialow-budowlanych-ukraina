@@ -16,15 +16,13 @@ class UaRowCleanupPromptTest(unittest.TestCase):
             handelsketten="цемент, пісок",
             url="https://venbud.ua",
         )
-        self.assertIn("KILLER-ПРАВИЛА", p)
         self.assertIn("company_name_clean", p)
-        self.assertIn("Фольгований утеплювач", p)
-        self.assertIn("Service unavailable", p)
+        self.assertIn("ЗАВЖДИ", p)
+        self.assertIn("wikibud.com.ua", p)
         self.assertIn("вул.", p)
         self.assertIn("Київ, Львів", p)
-        self.assertIn('ТОВ "Венбуд"', p)
 
-    def test_negative_examples_in_prompt(self):
+    def test_company_name_always_empty_in_llm_output(self):
         p = build_row_cleanup_prompt(
             company="kelma.org.ua",
             address="Композитна арматура 4 мм",
@@ -33,8 +31,8 @@ class UaRowCleanupPromptTest(unittest.TestCase):
             website="https://kelma.org.ua",
             states="Київ",
         )
-        self.assertIn("kelma.org.ua", p)
-        self.assertIn("company_name_clean=\"\"", p)
+        self.assertIn('company_name_clean=""', p)
+        self.assertIn("Nazwa firmy", p)
 
 
 if __name__ == "__main__":

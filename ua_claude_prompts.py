@@ -295,13 +295,12 @@ def build_row_cleanup_prompt(
     url: str = "",
 ) -> str:
     return f"""РОЛЬ
-Ти — QA-фільтр перед експортом у Excel (колонки «Nazwa firmy», «Adres»).
-Твій JSON потрапляє 1:1 у B2B-базу. Помилка = лист не тій фірмі.
-Будь безжальним: краще порожнє поле "", ніж брехня.
+Ти — QA-фільтр перед експортом у Excel (kolumna «Adres», telefon, website).
+Будь безжальним: краще porozhne pole "", nizh bрехня w adresie.
 
-ЦІЛЬОВА АУДИТОРІЯ (лише ці суб'єкти мають право на company_name_clean)
-Оптові постачальники / дистриб'ютори / бази / склади будматеріалів в Україні (ТОВ, ПП, ФОП, ПАТ, ПрАТ).
-НЕ магазини-каталоги. НЕ SEO-заголовки. НЕ назви товарів. НЕ UI сайту.
+ВАЖЛИВО: company_name_clean ЗАВЖДИ повертaj як "".
+Kolumna «Nazwa firmy» jest ZAWSZE ustawiana przez system wyłącznie z domeny website
+(np. wikibud.com.ua → Wikibud). Nie wypełniaj company_name_clean.
 
 ВІДПОВІДЬ — ЛИШЕ JSON (без markdown, без пояснень).
 
@@ -309,39 +308,9 @@ def build_row_cleanup_prompt(
 {{"company_name_clean":"","address":"","phone":"","website":"","bundesland":"","handelsketten":"","url":""}}
 
 ═══════════════════════════════════════════════════════════
-company_name_clean — KILLER-ПРАВИЛА (найвищий пріоритет)
+company_name_clean
 ═══════════════════════════════════════════════════════════
-
-ДОЗВОЛЕНО:
-• Офіційна назва юрособи в ОДНОМУ рядку + форма: ТОВ, ПП, ФОП, ПАТ, ПрАТ, ДП, КП, СПД (рідко).
-• Приклади OK:
-  «ТОВ "Венбуд"»
-  «ПП "БудМатеріал"»
-  «ФОП Іваненко О.М.»
-  «ТОВ "Київбудснаб"»
-
-ЗАБОРОНЕНО — НЕГАЙНО company_name_clean = "":
-• Назва ТОВАРУ / КАТЕГОРІЇ / БРЕНДУ без юрособи:
-  «Фольгований утеплювач», «Ґрунтовка Крайзель», «Сітка просічно-витяжна», «фарба …», «цемент М400»
-• SEO / маркетинг / CTA:
-  «Купити будматеріали», «Лідери продажів», «Асортимент інтернет-магазину», «офіційний представник заводу»
-• UI / технічний смітник:
-  «Service unavailable», «Advanced Search», «404», «Пошук», «Головна», «Контакти» (як єдина «назва»)
-• Домен / URL замість назви:
-  kelma.org.ua, www.example.com, https://…
-• Лише місто / регіон / тип діяльності:
-  «Київ», «Металобаза Київ», «Bud Materialy», «будматеріали», «опт»
-• Ціна / одиниця виміру / специфікація:
-  «4,30 грн/м», «мм», «кг», «комплект»
-• Закінчення двокрапкою з рекламою після:
-  «budMATERIAL: Купити …» → ""
-
-ПРАВИЛО ВИВОДУ НАЗВИ:
-1) Якщо у company є ТОВ/ПП/ФОП/ПАТ — витягни чисту назву з лапками як на сайті.
-2) Якщо company = сміття, але з website + email можна ВПЕВНЕНО вивести назву з домену
-   (budmaterial.ua → «ТОВ "Будматеріал"») — НІ, не вигадуй форму. Лише якщо форма є в company або address.
-3) Не впевнений → "".
-4) НІКОЛИ не підміняй назву товаром, навіть якщо товар згаданий у handelsketten.
+ЗАВЖДИ "" — ignoruj pole company.
 
 ═══════════════════════════════════════════════════════════
 address — KILLER-ПРАВИЛА
@@ -373,25 +342,22 @@ address — KILLER-ПРАВИЛА
 • url — ідентично website
 • bundesland — РІВНО один з: [{states}] — інакше ""
 • handelsketten — категорії матеріалів малими літерами через кому (цемент, пісок, …) або ""
-• email — НЕ виходить у JSON; лише для перевірки (домен email ≠ назва товару)
+• email — НЕ виходить у JSON; лише для перевірки
 
 ═══════════════════════════════════════════════════════════
 НЕГАТИВНІ ПРИКЛАДИ (еталон поведінки)
 ═══════════════════════════════════════════════════════════
-company="Фольгований утеплювач", address="Київ"
-→ {{"company_name_clean":"","address":"","phone":"…","website":"…","bundesland":"Київ","handelsketten":"…","url":"…"}}
+company="Фольгований утеплювач", website="https://wikibud.com.ua", address="Київ"
+→ {{"company_name_clean":"","address":"","phone":"…","website":"https://wikibud.com.ua","bundesland":"Київ","handelsketten":"…","url":"https://wikibud.com.ua"}}
 
 company="Service unavailable", address="Київ"
 → company_name_clean="", address=""
 
-company="budMATERIAL: Купити будівельні матерія", address="Рішення просте — замовте…"
+company="budMATERIAL: Купити будівельні матерія", website="https://budmaterial.kyiv.ua", address="Рішення просте — замовте…"
 → company_name_clean="", address=""
 
-company="kelma.org.ua", website="https://kelma.org.ua", address="Композитна арматура 4 мм - 4,30 грн/м"
-→ company_name_clean="", address="", website="https://kelma.org.ua"
-
-company="ТОВ \\"Венбуд\\"", address="м. Київ, вул. Бориспільська, 1"
-→ company_name_clean="ТОВ \\"Венбуд\\"", address="вул. Бориспільська, 1, м. Київ"
+company="ТОВ \"Венбуд\"", website="https://venbud.ua", address="м. Київ, вул. Бориспільська, 1"
+→ company_name_clean="", address="вул. Бориспільська, 1, м. Київ"
 
 ═══════════════════════════════════════════════════════════
 ВХІД (сирий скрап — не довіряй сліпо)

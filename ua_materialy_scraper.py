@@ -1109,6 +1109,8 @@ def is_rejected_company_name_for_export(
     low = text.lower()
     if re.match(r"^[\W\d_]+$", text):
         return True
+    if _looks_like_domain_label(text):
+        return True
     if any(m in low for m in _COMPANY_NAME_HARD_REJECT_MARKERS):
         return True
     if (website or "").lower().find("/pdfs/") >= 0 or (website or "").lower().endswith(".pdf"):
@@ -1131,6 +1133,11 @@ def is_rejected_company_name_for_export(
         )
     ):
         return True
+    if website and _name_aligns_with_domain(text, website):
+        if any(m in low for m in _COMPANY_NAME_HARD_REJECT_MARKERS):
+            return True
+        if len(text) >= 4:
+            return False
     if not _company_name_has_legal_form(text):
         if any(m in low for m in _COMPANY_NAME_SOFT_REJECT_IF_NO_LEGAL_FORM):
             return True
@@ -1148,25 +1155,10 @@ def finalize_company_name_for_export(
     website: str = "",
     email: str = "",
 ) -> str:
-    """Nach LLM-Cleanup: nur Name+Rechtsform, sonst Impressum/Domain-Fallback."""
+    """Nazwa firmy wyłącznie z domeny (LLM i Serper są ignorowane)."""
+    _ = llm_name, fallback_raw, email
     website = website_base_url(website) if website else ""
-    candidates: list[str] = []
-    if should_prefer_domain_company_name(fallback_raw, website):
-        candidates.append(derive_name_from_website(website))
-    candidates.extend(
-        (
-            sanitize_special_text(llm_name or ""),
-            clean_company_name(fallback_raw, website),
-            derive_name_from_website(website),
-        )
-    )
-    for candidate in candidates:
-        name = " ".join((candidate or "").split()).strip(" :|–—")
-        if not name or is_rejected_company_name_for_export(name, website, email):
-            continue
-        if _company_name_has_legal_form(name):
-            return name
-    return ""
+    return derive_name_from_website(website)
 
 
 def build_claude_row_cleanup_prompt(
@@ -1197,9 +1189,11 @@ def build_claude_row_cleanup_prompt(
 def row_cleanup_fallback(
     row: dict, company: str, address: str, phone: str, email: str, website: str
 ) -> dict:
+    _ = company
     bundesland = extract_bundesland(row)
+    domain_name = derive_name_from_website(website_base_url(website))
     return {
-        "company_name_clean": company,
+        "company_name_clean": domain_name,
         "address": address,
         "phone": phone,
         "email": email,
@@ -1210,10 +1204,7 @@ def row_cleanup_fallback(
 
 
 def apply_row_enrichment_to_row(row: dict, llm_result: dict) -> None:
-    """LLM czyści nazwę/adres/telefon — e-mail zostaje z pick_best kontaktów."""
-    company = llm_result.get("company_name_clean") or row.get("nazwa") or ""
-    row["company_name_clean"] = company
-    row["nazwa"] = company
+    """LLM czyści adres/telefon — nazwa firmy zawsze z domeny."""
     row["adres"] = llm_result.get("address", row.get("adres", ""))
     row["full_address"] = row["adres"]
     row["telefon"] = llm_result.get("phone", row.get("telefon", ""))
@@ -1227,6 +1218,7 @@ def apply_row_enrichment_to_row(row: dict, llm_result: dict) -> None:
         )
     if llm_result.get("url"):
         row["url"] = website_base_url(llm_result.get("url")) or row.get("url", "")
+    apply_domain_company_name_to_row(row)
 
 
 def format_handelsketten_for_excel(raw: str) -> str:
@@ -1261,6 +1253,7 @@ def finalize_row_for_excel_tables(row: dict) -> dict:
     )
     if row.get("bundesland") not in UA_OBLASTS:
         row["bundesland"] = extract_bundesland(row)
+    apply_domain_company_name_to_row(row)
     return row
 
 
@@ -1270,7 +1263,7 @@ def row_to_excel_kontakte_columns(row: dict, email: str = "") -> dict:
     mail = (email or row.get("email_target") or "").strip()
     website = (row.get("official_website") or row.get("www") or "").strip()
     return {
-        "Nazwa firmy": (row.get("company_name_clean") or row.get("nazwa") or "").strip(),
+        "Nazwa firmy": company_name_from_row_domain(row),
         "Adres": (row.get("adres") or row.get("full_address") or "").strip(),
         "Obwód": (row.get("bundesland") or row.get("discovery_bundesland") or "").strip(),
         "Telefon": (row.get("telefon") or "").strip(),
@@ -1285,7 +1278,7 @@ def row_to_excel_wojewodztwa_columns(row: dict) -> dict:
     """Mapuje wiersz pipeline na kolumny arkusza Wojewodztwa."""
     row = finalize_row_for_excel_tables(dict(row))
     return {
-        "Nazwa firmy": (row.get("company_name_clean") or row.get("nazwa") or "").strip(),
+        "Nazwa firmy": company_name_from_row_domain(row),
         "Obwód": (row.get("bundesland") or row.get("discovery_bundesland") or "").strip(),
         "Adres": (row.get("adres") or row.get("full_address") or "").strip(),
         "Strona www": (row.get("official_website") or row.get("www") or "").strip(),
@@ -1371,15 +1364,12 @@ def enrich_row_with_claude_cleanup(row: dict, logger: logging.Logger, cache: dic
         return finalize_row_for_excel_tables(row)
 
     llm_name = sanitize_special_text(parsed.get("company_name_clean", ""))
-    if not llm_name:
-        cleaned_name = ""
-    else:
-        cleaned_name = finalize_company_name_for_export(
-            llm_name,
-            fallback_raw=company,
-            website=website,
-            email=email,
-        )
+    cleaned_name = finalize_company_name_for_export(
+        llm_name,
+        fallback_raw=company,
+        website=website,
+        email=email,
+    )
     claude_result = {
         "company_name_clean": cleaned_name,
         "address": sanitize_special_text(parsed.get("address", "")),
@@ -1595,13 +1585,13 @@ def row_from_excel_record(rec: dict) -> dict:
     name = (row.get("nazwa") or "").strip()
     if name:
         row["company_name_raw"] = name
-        row["company_name_clean"] = name
     if row.get("adres"):
         row["full_address"] = row["adres"]
     if row.get("telefon"):
         row["phones_found"] = row["telefon"]
     if row.get("www"):
         row["official_website"] = row["www"]
+    apply_domain_company_name_to_row(row)
     www_checked = str(rec.get("WWW_geprueft") or "").strip().lower()
     if www_checked == "ja":
         row["retail_verified"] = True
@@ -3547,6 +3537,33 @@ def derive_name_from_website(website: str) -> str:
     return " ".join(part.capitalize() for part in root.split())
 
 
+def row_website_for_company_name(row: dict) -> str:
+    return website_base_url(
+        (row.get("official_website") or row.get("www") or row.get("url") or "").strip()
+    )
+
+
+def company_name_from_row_domain(row: dict) -> str:
+    return derive_name_from_website(row_website_for_company_name(row))
+
+
+def apply_domain_company_name_to_row(row: dict) -> None:
+    """Nazwa firmy wyłącznie z domeny www — jedyne źródło kolumny Nazwa firmy."""
+    name = company_name_from_row_domain(row)
+    if not name:
+        return
+    raw = (
+        row.get("company_name_raw")
+        or row.get("nazwa")
+        or row.get("company_name_clean")
+        or ""
+    ).strip()
+    if raw and not row.get("company_name_raw"):
+        row["company_name_raw"] = raw
+    row["company_name_clean"] = name
+    row["nazwa"] = name
+
+
 _RETAIL_CHAIN_IN_NAME = (
     "edeka",
     "rewe",
@@ -3568,7 +3585,19 @@ def website_base_url(url: str) -> str:
     return f"https://{domain}" if domain else normalize_website(url)
 
 
+def _looks_like_domain_label(text: str) -> bool:
+    low = (text or "").strip().lower()
+    if "://" in low or low.startswith("www."):
+        return True
+    compact = low.replace(" ", "")
+    if "." not in compact:
+        return False
+    return bool(re.fullmatch(r"[\w-]+(\.[\w-]+)+", compact))
+
+
 def _name_aligns_with_domain(name: str, website: str) -> bool:
+    if _looks_like_domain_label(name):
+        return False
     domain_name = derive_name_from_website(website).lower()
     if not domain_name:
         return False
@@ -3606,6 +3635,13 @@ def should_prefer_domain_company_name(raw_name: str, website: str) -> bool:
         return True
     if not _company_name_has_legal_form(raw) and len(raw.split()) >= 3:
         return True
+    if not _company_name_has_legal_form(raw) and not _name_aligns_with_domain(raw, website):
+        if any(m in low for m in _COMPANY_NAME_HARD_REJECT_MARKERS):
+            return True
+        if re.fullmatch(r"[\w-]+(\.[\w-]+)+", low.replace(" ", "")):
+            return True
+        if len(raw) >= 4:
+            return True
     return False
 
 
@@ -3632,13 +3668,8 @@ def clean_company_name(name: str, website: str = "") -> str:
 
 def normalize_row_company_name(row: dict) -> dict:
     raw_name = (row.get("nazwa") or row.get("company_name_raw") or "").strip()
-    website_hint = website_base_url(
-        row.get("official_website") or row.get("www") or row.get("url") or ""
-    )
-    clean_name = clean_company_name(raw_name, website_hint)
     row["company_name_raw"] = raw_name
-    row["company_name_clean"] = clean_name
-    row["nazwa"] = clean_name
+    apply_domain_company_name_to_row(row)
     return row
 
 
@@ -4020,36 +4051,7 @@ def reconcile_contact_sources(row: dict, collected: dict) -> dict:
     if website_for_name:
         row["www"] = website_for_name
         row["official_website"] = website_for_name
-    current = (row.get("company_name_clean") or row.get("nazwa") or "").strip()
-    if website_for_name and should_prefer_domain_company_name(current, website_for_name):
-        domain_clean = derive_name_from_website(website_for_name)
-        if domain_clean:
-            if not row.get("company_name_raw"):
-                row["company_name_raw"] = current
-            row["company_name_clean"] = domain_clean
-            row["nazwa"] = domain_clean
-    else:
-        www_company = (collected.get("company_name") or "").strip()
-        if www_company:
-            weak = (
-                not current
-                or current.lower() in ("nieznana firma", "unbekanntes unternehmen")
-                or len(current) < 6
-                or any(
-                    x in current.lower() for x in ("http://", "https://", "pdf", "11880")
-                )
-            )
-            if weak or (
-                re.search(_COMPANY_LEGAL_SUFFIX, www_company, re.IGNORECASE)
-                and not re.search(_COMPANY_LEGAL_SUFFIX, current, re.IGNORECASE)
-            ):
-                clean = clean_company_name(
-                    www_company, website_for_name or website or row.get("www") or ""
-                )
-                row["company_name_clean"] = clean
-                row["nazwa"] = clean
-                if not row.get("company_name_raw"):
-                    row["company_name_raw"] = current or www_company
+    apply_domain_company_name_to_row(row)
     return row
 
 
@@ -4421,12 +4423,13 @@ def discover_places_with_serper(
                     ) + 1
                 continue
             seen.add(link)
+            domain_name = derive_name_from_website(link)
             rows.append(
                 {
                     "fraza": term,
-                    "nazwa": company_clean,
+                    "nazwa": domain_name,
                     "company_name_raw": (item.get("title") or "").strip(),
-                    "company_name_clean": clean_company_name(item.get("title", ""), link),
+                    "company_name_clean": domain_name,
                     "ocena": "",
                     "liczba_opinii": "",
                     "kategoria": term,
