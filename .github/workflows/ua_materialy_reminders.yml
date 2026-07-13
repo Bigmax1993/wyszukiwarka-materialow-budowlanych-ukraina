@@ -16,7 +16,7 @@ on:
         description: Artefakt źródłowy cache (domyślnie najnowszy fri)
         required: false
         type: string
-        default: "ua-materialy-wyniki-fri"
+        default: "ua-materialy-wyniki-tue"
 
 permissions:
   actions: read
@@ -48,15 +48,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          PREFERRED="${{ github.event_name == 'workflow_dispatch' && inputs.artifact_name || 'ua-materialy-wyniki-fri' }}"
-          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
-            --jq --arg name "$PREFERRED" \
-            '[.artifacts[] | select(.name==$name and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty')
+          resolve_run_id() {
+            local artifact_name="$1"
+            gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+              --jq "[.artifacts[] | select(.name==\"${artifact_name}\" and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty"
+          }
+          PREFERRED="${{ github.event_name == 'workflow_dispatch' && inputs.artifact_name || 'ua-materialy-wyniki-tue' }}"
+          RUN_ID=$(resolve_run_id "$PREFERRED")
           if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
-            for NAME in ua-materialy-wyniki-fri ua-materialy-wyniki-tue ua-materialy-wyniki-mon ua-materialy-wyniki-reminders ua-materialy-wyniki-thu; do
-              RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
-                --jq --arg name "$NAME" \
-                '[.artifacts[] | select(.name==$name and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty')
+            for NAME in ua-materialy-wyniki-tue ua-materialy-wyniki-mon ua-materialy-wyniki-fri ua-materialy-wyniki-reminders ua-materialy-wyniki-thu ua-materialy-wyniki-pi; do
+              RUN_ID=$(resolve_run_id "$NAME")
               if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
                 PREFERRED="$NAME"
                 break
