@@ -74,6 +74,8 @@ pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → nd→thu → sync UA → 
 
 **UA send:** bez załącznika; tel. `+380977091141`.
 
+**Maile spersonalizowane (od 2026-07-13):** Claude wybiera średnią regionalną firmę budowlaną z obwodu discovery i podaje **realny adres** obiektu z bazy `ua_regional_construction_refs.py`. W GHA: `UA_REGIONAL_INQUIRY_EMAIL_FROM=2026-07-13`.
+
 Concurrency: `ua-pipeline`.
 
 ## Ręczne uruchomienie

@@ -2070,6 +2070,7 @@ def pipeline_row_to_contact_info(row: dict) -> dict:
             "contact_quality_score": int(row.get("contact_quality_score", 0) or 0),
             "full_address": (row.get("full_address") or row.get("adres") or "").strip(),
             "bundesland": (row.get("bundesland") or "").strip(),
+            "discovery_bundesland": (row.get("discovery_bundesland") or "").strip(),
         }.items()
         if v not in ("", None) or k in (
             "retail_verified",
@@ -5253,7 +5254,7 @@ def _process_email_jobs(
             mail.get("company_name", "Firma"),
             logger,
             cache=cache,
-            contact_info=cache.get("contacts", {}).get(mail.get("place_url"), {}),
+            contact_info=contact_info,
             place_url=mail.get("place_url") or "",
         )
         if dry_run_email:

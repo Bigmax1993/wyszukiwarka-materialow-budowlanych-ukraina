@@ -118,6 +118,22 @@ def inquiry_website() -> str:
     return get_env_value("INQUIRY_WEBSITE").strip()
 
 
+def ensure_inquiry_contact_in_body(body: str) -> str:
+    """
+    Uzupełnia brakujący telefon UA w podpisie.
+    Nie dokleja statycznego podpisu, jeśli Claude już dodał blok «З повагою».
+    """
+    text = strip_de_campaign_branding(strip_german_phones_from_text((body or "").strip()))
+    if not text:
+        return build_inquiry_signature_uk()
+    phone = inquiry_phone()
+    if phone in text:
+        return text
+    if "З повагою" in text:
+        return f"{text.rstrip()}\nTel.: {phone}"
+    return f"{text.rstrip()}\n\n{build_inquiry_signature_uk()}"
+
+
 def build_inquiry_signature_uk() -> str:
     lines = ["З повагою,", ""]
     name = inquiry_sender_name()

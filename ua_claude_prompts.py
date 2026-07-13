@@ -381,11 +381,20 @@ def build_personalized_inquiry_email_prompt_uk(
     materials: str = "",
     page_snippet: str = "",
     style_hint: str = "",
+    discovery_oblast: str = "",
+    construction_project=None,
 ) -> str:
     from ua_materialy_inquiry_email_uk import (
-        build_inquiry_sender_brief_uk,
-        build_inquiry_signature_uk,
-        build_sender_contact_line_uk,
+        inquiry_phone,
+        inquiry_sender_name,
+    )
+    from ua_regional_sender_context import (
+        build_regional_sender_instructions_uk,
+        resolve_discovery_oblast,
+    )
+    from ua_regional_construction_refs import (
+        build_construction_project_prompt_block_uk,
+        pick_construction_project,
     )
 
     snippet = (page_snippet or "").strip()
@@ -393,21 +402,30 @@ def build_personalized_inquiry_email_prompt_uk(
         snippet = snippet[:3497] + "..."
     style = (style_hint or "професійний, природний B2B-стиль, без шаблонних фраз").strip()
     mats = materials or "будматеріали (загальний асортимент)"
-    sender_brief = build_inquiry_sender_brief_uk()
-    sender_contact = build_sender_contact_line_uk()
-    signature_block = build_inquiry_signature_uk()
+    region_key = resolve_discovery_oblast(
+        {"bundesland": oblast, "discovery_bundesland": discovery_oblast},
+        fallback=oblast or discovery_oblast,
+    )
+    project = construction_project or pick_construction_project(
+        region_key, seed=company_name or oblast or discovery_oblast
+    )
+    project_block = build_construction_project_prompt_block_uk(project)
+    regional_sender = build_regional_sender_instructions_uk(
+        region_key,
+        sender_name=inquiry_sender_name(),
+        sender_phone=inquiry_phone(),
+        construction_project_block=project_block,
+    )
     return f"""РОЛЬ
 Ти — автор B2B-листів українською. Пишеш УНІКАЛЬНИЙ лист для КОНКРЕТНОЇ фірми-постачальника будматеріалів в Україні.
 Кожен лист має відрізнятися формулюваннями — не копіюй один шаблон для всіх.
 
-ВІДПРАВНИК (контекст, не вигадуй інших фактів)
-{sender_brief}
-Контакт: {sender_contact or "менеджер закупівель"}
+{regional_sender}
 
-ОДЕРЖУВАЧ
+ОДЕРЖУВАЧ (постачальник будматеріалів)
 Назва: {company_name}
 Сайт: {website or "(немає)"}
-Область: {oblast or "(невідомо)"}
+Область постачальника: {oblast or "(невідомо)"}
 Адреса: {address or "(немає)"}
 Категорії матеріалів (з бази): {mats}
 
@@ -418,28 +436,28 @@ def build_personalized_inquiry_email_prompt_uk(
 Напиши повністю персоналізований лист ЗАПИТУ про співпрацю / оптові ціни / прайс.
 • Мова: ВИКЛЮЧНО українська.
 • Звернення: «Шановні пані та панове» або персоналізоване до {company_name}.
-• Обов'язково згадай щось конкретне про цю фірму (асортимент, регіон, тип діяльності) — на основі даних вище.
+• Обов'язково згадай щось конкретне про цю фірму-постачальника (асортимент, регіон, тип діяльності).
+• Обов'язково згадай обрану регіональну будівельну компанію та об'єкт будівництва з блоку «ОБ'ЄКТ БУДІВНИЦТВА» (з реальною адресою).
 • Попроси прайс-лист або контакт відділу опту / продажів.
 • Не вигадуй цін, знижок, термінів доставки, яких немає у вхідних даних.
 • Стиль: {style}
-• Довжина тіла: 120–220 слів (без підпису).
+• Довжина тіла: 140–240 слів (без підпису).
 
 ЗАБОРОНЕНО
 • Російська мова
-• Німецькі номери (+49, 0049) — заборонено; єдиний контактний телефон: +380977091141 (у підписі)
+• Німецькі номери (+49, 0049) — заборонено; єдиний контактний телефон: {inquiry_phone()} (у підписі)
 • Слова: безкоштовно, акція, терміново, клікніть, знижка 50%
 • Один і той самий текст для різних фірм
 • Заборонено додавати вкладення / файли / посилання на завантаження
 • HTML, markdown
-
-ПІДПИС (додай у поле body наприкінці, БЕЗ змін):
-{signature_block}
+• Представлятися як постачальник або анонімний «покупець» без назви будівельної компанії
+• Вигадані або змінені адреси будмайданчика (інша вулиця, номер, місто)
 
 ВИХІД — ЛИШЕ JSON (без markdown):
 {{"subject":"...","body":"..."}}
 
-subject: унікальний, до 78 символів, українською, з назвою або спеціалізацією фірми
-body: повний лист готовий до відправки (plain text), включно з підписом вище
+subject: унікальний, до 78 символів, українською; згадай тип об'єкта будівництва або регіон
+body: повний лист готовий до відправки (plain text), включно з підписом (ім'я, посада, компанія, tel.)
 """
 
 

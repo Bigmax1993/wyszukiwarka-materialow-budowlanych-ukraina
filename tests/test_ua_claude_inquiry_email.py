@@ -31,22 +31,21 @@ def test_prompt_no_mfg_branding(monkeypatch):
 
 
 def test_prompt_includes_ua_phone_and_sender(monkeypatch):
-    from ua_materialy_inquiry_email_uk import build_inquiry_signature_uk, build_sender_contact_line_uk
+    from ua_materialy_inquiry_email_uk import inquiry_phone, inquiry_sender_name
 
     monkeypatch.setenv("MAIL_SENDER_NAME", "Свінчак Максим Tel.+4915223655399")
     monkeypatch.setenv("INQUIRY_PHONE", "+49 1522 3655 399")
     monkeypatch.setenv("INQUIRY_COMPANY_NAME", "")
     monkeypatch.setenv("INQUIRY_WEBSITE", "")
-    contact = build_sender_contact_line_uk()
-    signature = build_inquiry_signature_uk()
-    p = build_personalized_inquiry_email_prompt_uk(company_name="Test ТОВ")
-    assert contact in p
-    assert signature in p
-    assert DEFAULT_INQUIRY_PHONE_UK in contact
-    assert DEFAULT_INQUIRY_PHONE_UK in signature
-    assert DEFAULT_INQUIRY_SENDER_NAME_UK in signature
-    assert "+49" not in contact
-    assert "+49" not in signature
+    p = build_personalized_inquiry_email_prompt_uk(
+        company_name="Test ТОВ",
+        discovery_oblast="Kyiv",
+    )
+    assert DEFAULT_INQUIRY_PHONE_UK in p
+    assert inquiry_sender_name() in p
+    assert DEFAULT_INQUIRY_SENDER_NAME_UK in p
+    assert inquiry_phone() == DEFAULT_INQUIRY_PHONE_UK
+    assert "1522" not in p
 
 
 def test_prompt_forbids_attachments():

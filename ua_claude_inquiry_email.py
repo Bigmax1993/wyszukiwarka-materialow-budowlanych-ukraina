@@ -10,7 +10,12 @@ from claude_client import claude_generate_text
 from email_custom_template import parse_llm_email_json
 from scraper_env import get_anthropic_api_key
 from ua_claude_prompts import build_personalized_inquiry_email_prompt_uk
-from ua_materialy_inquiry_email_uk import build_inquiry_signature_uk
+from ua_materialy_inquiry_email_uk import ensure_inquiry_contact_in_body
+from ua_regional_construction_refs import (
+    inject_construction_project_context,
+    pick_construction_project,
+)
+from ua_regional_sender_context import resolve_discovery_oblast
 
 
 def _contact_blob(contact_info: dict | None) -> dict[str, str]:
@@ -26,6 +31,7 @@ def _contact_blob(contact_info: dict | None) -> dict[str, str]:
             info.get("official_website") or info.get("www") or info.get("url") or ""
         ).strip(),
         "oblast": str(info.get("bundesland") or info.get("oblast") or "").strip(),
+        "discovery_bundesland": str(info.get("discovery_bundesland") or "").strip(),
         "address": str(
             info.get("full_address") or info.get("adres") or info.get("address") or ""
         ).strip(),
@@ -68,6 +74,8 @@ def claude_generate_inquiry_email_ua(
 
     ctx = _contact_blob(contact_info)
     display_name = ctx["company_name"] or (company_name or "").strip() or "Постачальник"
+    region_key = resolve_discovery_oblast(ctx, fallback=ctx.get("oblast") or "")
+    project = pick_construction_project(region_key, seed=key or display_name)
     prompt = build_personalized_inquiry_email_prompt_uk(
         company_name=display_name,
         website=ctx["website"],
@@ -76,6 +84,8 @@ def claude_generate_inquiry_email_ua(
         materials=ctx["materials"],
         page_snippet=ctx["page_snippet"],
         style_hint=style_hint,
+        discovery_oblast=ctx["discovery_bundesland"],
+        construction_project=project,
     )
     try:
         text, model = claude_generate_text(
@@ -90,9 +100,8 @@ def claude_generate_inquiry_email_ua(
         logger.info("Claude inquiry email UA, model=%s, key=%s", model, key[:80])
         fallback_subject = f"Запит щодо постачання будматеріалів — {display_name}"
         subject, body = parse_llm_email_json(text, fallback_subject)
-        signature = build_inquiry_signature_uk()
-        if signature and signature not in body:
-            body = body.rstrip() + "\n\n" + signature
+        body = inject_construction_project_context(body, project)
+        body = ensure_inquiry_contact_in_body(body)
         from ua_materialy_inquiry_email_uk import (
             strip_de_campaign_branding,
             strip_german_phones_from_text,
@@ -100,7 +109,13 @@ def claude_generate_inquiry_email_ua(
 
         body = strip_german_phones_from_text(body)
         body = strip_de_campaign_branding(body)
-        mail_cache[key] = {"subject": subject, "body": body, "model": model}
+        mail_cache[key] = {
+            "subject": subject,
+            "body": body,
+            "model": model,
+            "construction_project": project.name_uk,
+            "construction_address": project.address_uk,
+        }
         return subject, body
     except (json.JSONDecodeError, ValueError, KeyError) as exc:
         logger.warning("Claude inquiry email UA parse error: %s", exc)

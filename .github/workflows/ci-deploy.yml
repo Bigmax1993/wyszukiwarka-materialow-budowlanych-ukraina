@@ -13,6 +13,7 @@ jobs:
       PYTHONUTF8: "1"
       DISABLE_SEND_WINDOW: "1"
       SCRAPER_TIMEZONE: Europe/Warsaw
+      UA_REGIONAL_INQUIRY_EMAIL_FROM: "2026-07-13"
     steps:
       - uses: actions/checkout@v4
 
