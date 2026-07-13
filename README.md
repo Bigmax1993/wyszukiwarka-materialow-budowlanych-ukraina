@@ -84,6 +84,15 @@ Ręczny pełny pipeline GHA:
 powershell -ExecutionPolicy Bypass -File scripts\run_full_pipeline_gha.ps1
 ```
 
+## Odpowiedzi i przypomnienia (co 3 dni)
+
+```powershell
+python ua_sync_replies_and_reminders.py              # podgląd (IMAP + lista kandydatów)
+python ua_sync_replies_and_reminders.py --send       # wysyłka przypomnień UA
+```
+
+IMAP wymaga tych samych `MAIL_USER` / `MAIL_PASSWORD` co wysyłka. Max 2 przypomnienia na firmę, min. 3 dni od zapytania lub poprzedniego przypomnienia.
+
 ---
 
 ## Limity
@@ -100,7 +109,7 @@ powershell -ExecutionPolicy Bypass -File scripts\run_full_pipeline_gha.ps1
 
 Dokumentacja: [`docs/GITHUB_ACTIONS.md`](docs/GITHUB_ACTIONS.md)
 
-8 workflowów: `ua_materialy_{pi,thu,mon,tue,fri}.yml`, `sync-google-drive-ua.yml`, `tests.yml`, `ci-deploy.yml`.
+9 workflowów: `ua_materialy_{pi,thu,mon,tue,fri,reminders}.yml`, `sync-google-drive-ua.yml`, `tests.yml`, `ci-deploy.yml`.
 
 Concurrency: `ua-pipeline` (w tym repo).
 
@@ -109,9 +118,9 @@ Concurrency: `ua-pipeline` (w tym repo).
 | Secret | Wymagany | Opis |
 |--------|----------|------|
 | `SERPER_API_KEY` | tak | API Serper |
-| `ANTHROPIC_API_KEY` | tak | Claude API |
-| `MAIL_USER`, `MAIL_PASSWORD` | tak (send) | SMTP / Gmail |
-| `MAIL_SENDER_NAME` | tak | Свінчак Максим |
+| `ANTHROPIC_API_KEY` | tak | Claude API (discovery + klasyfikacja odpowiedzi IMAP) |
+| `MAIL_USER`, `MAIL_PASSWORD` | tak | Gmail SMTP **i** IMAP (ten sam login / hasło aplikacji) |
+| `MAIL_SENDER_NAME` | tak | Свінчак Максим (wysyłka + przypomnienia) |
 | `GDRIVE_FOLDER_ID_UA` | tak | Sync Drive pon 06:00 |
 | `GDRIVE_OAUTH_*` | zalecany | Upload OAuth |
 | `GDRIVE_SERVICE_ACCOUNT_JSON` | opcjonalny | Konto usługi |

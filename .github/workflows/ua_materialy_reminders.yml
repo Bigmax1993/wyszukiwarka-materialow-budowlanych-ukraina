@@ -1,0 +1,102 @@
+name: UA sync odpowiedzi i przypomnienia
+
+# Kampania UA — IMAP + przypomnienia co 3 dni (firmy bez odpowiedzi)
+on:
+  schedule:
+    # Dni 1, 4, 7, … miesiąca o 10:00 (Europe/Warsaw) ≈ co 3 dni
+    - cron: "0 10 1,4,7,10,13,16,19,22,25,28 * *"
+      timezone: Europe/Warsaw
+  workflow_dispatch:
+    inputs:
+      send_reminders:
+        description: Wyślij przypomnienia (domyślnie tylko skan + podgląd)
+        type: boolean
+        default: true
+      artifact_name:
+        description: Artefakt źródłowy cache (domyślnie najnowszy fri)
+        required: false
+        type: string
+        default: "ua-materialy-wyniki-fri"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ua-pipeline
+  cancel-in-progress: false
+
+env:
+  SCRAPER_TIMEZONE: Europe/Warsaw
+  DISABLE_SEND_WINDOW: "1"
+  KANBUD_PROJECT_ROOT: ${{ github.workspace }}/libs
+  MAIL_ARCHIVE_IMAP: "1"
+  USE_CLAUDE_REPLY_INTELLIGENCE: "1"
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+jobs:
+  sync-reminders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-scraper
+
+      - name: Resolve artifact run
+        id: artifact_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREFERRED="${{ github.event_name == 'workflow_dispatch' && inputs.artifact_name || 'ua-materialy-wyniki-fri' }}"
+          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq --arg name "$PREFERRED" \
+            '[.artifacts[] | select(.name==$name and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty')
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            for NAME in ua-materialy-wyniki-fri ua-materialy-wyniki-tue ua-materialy-wyniki-mon ua-materialy-wyniki-reminders ua-materialy-wyniki-thu; do
+              RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+                --jq --arg name "$NAME" \
+                '[.artifacts[] | select(.name==$name and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty')
+              if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+                PREFERRED="$NAME"
+                break
+              fi
+            done
+          fi
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "::error::Brak artefaktu cache UA (fri/tue/mon/...)"
+            exit 1
+          fi
+          echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "artifact=$PREFERRED" >> "$GITHUB_OUTPUT"
+
+      - name: Download cache
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.artifact_run.outputs.artifact }}
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.artifact_run.outputs.run-id }}
+          path: .
+
+      - name: Sync IMAP + przypomnienia UA
+        env:
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_SENDER_NAME: ${{ secrets.MAIL_SENDER_NAME }}
+        run: |
+          ARGS="--min-days 3 --max-send 100"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.send_reminders }}" != "true" ]; then
+            echo "Tylko skan IMAP (bez wysyłki przypomnień)."
+          else
+            ARGS="$ARGS --send"
+          fi
+          python ua_sync_replies_and_reminders.py $ARGS
+
+      - name: Upload Wyniki artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ua-materialy-wyniki-reminders
+          path: |
+            Wyniki/
+            wyslane/

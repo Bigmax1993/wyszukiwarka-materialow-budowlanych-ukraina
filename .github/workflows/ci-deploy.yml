@@ -34,15 +34,21 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MAIL_USER: ${{ secrets.MAIL_USER }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_SENDER_NAME: ${{ secrets.MAIL_SENDER_NAME }}
         run: |
           python -c "
           import os, sys
-          missing = [k for k in ('SERPER_API_KEY','ANTHROPIC_API_KEY','MAIL_USER','MAIL_PASSWORD') if not (os.environ.get(k) or '').strip()]
+          missing = [k for k in ('SERPER_API_KEY','ANTHROPIC_API_KEY','MAIL_USER','MAIL_PASSWORD','MAIL_SENDER_NAME') if not (os.environ.get(k) or '').strip()]
           if missing:
               print('MISSING SECRETS:', ', '.join(missing))
               sys.exit(1)
           print('OK: wymagane secrets ustawione (wartosci ukryte).')
           "
+
+      - name: Compile sync/reminder modules
+        run: |
+          python -m py_compile ua_sync_replies_and_reminders.py
+          python -m py_compile libs/email_reply_intelligence.py
 
       - name: Dry-run email pipeline (bez wysylki SMTP)
         env:

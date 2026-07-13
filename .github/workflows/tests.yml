@@ -29,7 +29,8 @@ jobs:
           python -m py_compile campaign_data_paths.py
           python -m py_compile ua_materialy_scraper.py
           python -m py_compile ua_oblast_keywords.py
-          python -m py_compile ua_materialy_inquiry_email_uk.py
+          python -m py_compile ua_sync_replies_and_reminders.py
+          python -m py_compile libs/email_reply_intelligence.py
 
       - name: Scraper smoke UA materialy (--test)
         run: python ua_materialy_scraper.py --test
@@ -46,5 +47,6 @@ jobs:
             tests/test_ua_email_targeting.py \
             tests/test_ua_claude_contact_extract.py \
             tests/test_ua_contact_pipeline_integration.py \
+            tests/test_ua_reminder_email.py \
             tests/test_repo_isolation.py \
             -q

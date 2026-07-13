@@ -47,6 +47,9 @@ REMINDER_2_HOURS_AFTER_FIRST = 2.0
 MAX_REMINDERS_PER_CONTACT = 2
 REMINDER_SEND_DELAY_MIN = 22
 REMINDER_SEND_DELAY_MAX = 58
+# Kampania UA: przypomnienia co 3 dni (nie godzin)
+UA_REMINDER_INTERVAL_DAYS = 3
+UA_REMINDER_INTERVAL_HOURS = UA_REMINDER_INTERVAL_DAYS * 24.0
 SEND_WINDOW_START = 8
 SEND_WINDOW_END = 18
 
@@ -62,6 +65,11 @@ SIGNATURE_DE = (
     "Maksym Swinczak – MFG Modernerfliesenboden\n"
     "Tel.: +49 152 23655399\n"
     "Web: mfg-fliesen.de"
+)
+SIGNATURE_UK = (
+    "З повагою,\n\n"
+    "Свінчак Максим\n"
+    "Tel.: +380977091141"
 )
 RED_FILL_RGB = "FFFFC7CE"
 YELLOW_FILL_RGB = "FFFFFF99"
@@ -822,8 +830,8 @@ def has_meaningful_reply(reply_status: str) -> bool:
     return rs.startswith("replied")
 
 
-def contact_has_any_reply(contact: dict) -> bool:
-    """Jakakolwiek wiadomość zwrotna (także auto-odpowiedź, bounce) — bez przypomnienia."""
+def contact_has_inbound_reply(contact: dict) -> bool:
+    """Wykryta wiadomość zwrotna od odbiorcy (IMAP / cache)."""
     if contact.get("reply_at"):
         return True
     if contact.get("reply_from"):
@@ -833,6 +841,55 @@ def contact_has_any_reply(contact: dict) -> bool:
     if contact.get("has_reply"):
         return True
     return bool((contact.get("reply_status") or "").strip())
+
+
+def contact_has_any_reply(contact: dict) -> bool:
+    """Brak przypomnień — odpowiedź lub trwała blokada po odpowiedzi."""
+    if contact.get("reminders_suppressed"):
+        return True
+    if str(contact.get("email_status") or "").strip().lower() == "replied":
+        return True
+    return contact_has_inbound_reply(contact)
+
+
+def suppress_reminders_for_replied_contact(contact: dict) -> bool:
+    """
+    Po wykryciu odpowiedzi — trwale wyłącz przypomnienia (także gdy odp. przyszła przed 3 dniami).
+    Zwraca True jeśli kontakt został oznaczony po raz pierwszy.
+    """
+    if contact.get("reminders_suppressed") and str(
+        contact.get("email_status") or ""
+    ).strip().lower() == "replied":
+        return False
+    if not contact_has_inbound_reply(contact):
+        return False
+    contact["reminders_suppressed"] = True
+    status = str(contact.get("email_status") or "").strip().lower()
+    if status in ("sent", "reminder_sent"):
+        contact["email_status"] = "replied"
+    if not (contact.get("reminder_status") or "").strip():
+        contact["reminder_status"] = "skipped_has_reply"
+    return True
+
+
+def backfill_reminder_suppression_for_replies(
+    cache: dict, logger: logging.Logger | None = None
+) -> int:
+    """Istniejące wpisy z odpowiedzią — bez kolejnych przypomnień."""
+    updated = 0
+    for info in (cache.get("contacts") or {}).values():
+        if not isinstance(info, dict):
+            continue
+        if info.get("reminders_suppressed"):
+            continue
+        if suppress_reminders_for_replied_contact(info):
+            updated += 1
+    if logger and updated:
+        logger.info(
+            "backfill_reminder_suppression: %s kontakt(ów) z odpowiedzią — bez przypomnień",
+            updated,
+        )
+    return updated
 
 
 def requires_user_intervention(reply_status: str, body_text: str = "") -> bool:
@@ -899,6 +956,14 @@ def reply_status_label(status: str, lang: str = "pl") -> str:
             "auto_reply": "Auto",
             "bounce": "Bounce",
         }
+    elif lang == "uk":
+        m = {
+            "replied_with_price": "Пропозиція",
+            "replied_questions": "Питання",
+            "replied_no_price": "Без ціни",
+            "auto_reply": "Авто",
+            "bounce": "Bounce",
+        }
     return m.get((status or "").strip().lower(), status or "")
 
 
@@ -909,6 +974,8 @@ def export_columns_from_contact(contact: dict, lang: str = "pl") -> dict[str, st
     has_r = "Tak" if has_meaningful_reply(rs) or contact.get("has_reply") else "Nie"
     if lang == "de":
         has_r = "Ja" if has_r == "Tak" else "Nein"
+    elif lang == "uk":
+        has_r = "Так" if has_r == "Tak" else "Ні"
     call = contact.get("call_needed")
     if call is None:
         call = compute_call_needed(contact, DEFAULT_NO_REPLY_HOURS)
@@ -926,6 +993,13 @@ def export_columns_from_contact(contact: dict, lang: str = "pl") -> dict[str, st
             "Ja"
             if is_user_marked_read(contact)
             else ("Nein" if needs_int else "")
+        )
+    elif lang == "uk":
+        int_lbl = "ТАК" if needs_int else ""
+        read_lbl = (
+            "Так"
+            if is_user_marked_read(contact)
+            else ("Ні" if needs_int else "")
         )
     else:
         int_lbl = "TAK" if needs_int else ""
@@ -1033,6 +1107,7 @@ def apply_reply_to_contact(
         contact["reply_description"] = (q or body_clean or "")[:500]
     contact["call_needed"] = compute_call_needed(contact, DEFAULT_NO_REPLY_HOURS)
     update_intervention_flags(contact, reply_status, body_clean or body_text)
+    suppress_reminders_for_replied_contact(contact)
 
 
 def fetch_imap_messages(
@@ -1477,6 +1552,11 @@ def get_pending_reminder_number(
     if second_after_hours is None:
         second_after_hours = REMINDER_2_HOURS_AFTER_FIRST
 
+    if contact.get("reminders_suppressed"):
+        return None
+    if str(contact.get("email_status") or "").strip().lower() == "replied":
+        return None
+
     if contact_has_any_reply(contact):
         return None
     if not (contact.get("email_target") or "").strip():
@@ -1509,11 +1589,22 @@ def get_pending_reminder_number(
     return None
 
 
-def needs_reminder(contact: dict, min_hours: float | None = None) -> bool:
+def needs_reminder(
+    contact: dict,
+    min_hours: float | None = None,
+    *,
+    second_after_hours: float | None = None,
+) -> bool:
     """True jeśli należy wysłać kolejne przypomnienie (1. lub 2.)."""
     if min_hours is None:
         min_hours = DEFAULT_REMINDER_MIN_HOURS
-    pending = get_pending_reminder_number(contact, first_after_hours=min_hours)
+    if second_after_hours is None:
+        second_after_hours = min_hours
+    pending = get_pending_reminder_number(
+        contact,
+        first_after_hours=min_hours,
+        second_after_hours=second_after_hours,
+    )
     return pending is not None
 
 
@@ -1605,6 +1696,8 @@ def _reply_subject(original_subject: str, lang: str, company: str) -> str:
         return f"Re: {subj}"
     if lang == "de":
         return f"Re: Preisanfrage – {company}"
+    if lang == "uk":
+        return f"Re: запит щодо пропозиції – {company}"
     return f"Re: zapytanie ofertowe – {company}"
 
 
@@ -1651,6 +1744,15 @@ def _reminder_from_line(lang: str) -> str:
         if sender_name and sender:
             return f"{sender_name} <{sender}>"
         return sender or sender_name or ""
+    if lang == "uk":
+        sender_name = sanitize_sender_name(
+            get_env_value(ENV_GMAIL_SENDER_NAME) or get_env_value("MAIL_SENDER_NAME")
+        )
+        if not sender_name:
+            sender_name = "Свінчак Максим"
+        if sender:
+            return f"{sender_name} <{sender}>"
+        return sender_name
     # PL: zawsze Kanbud w nagłówku cytatu (nie nazwa nadawcy z Gmail/MFG)
     if sender:
         return f"Maksym Swinczak, Kanbud Sp. z o.o. <{sender}>"
@@ -1676,6 +1778,13 @@ def format_quoted_previous_email(
         header += f"Betreff: {original_subject or '(ohne Betreff)'}\n"
         if from_line:
             header += f"Von: {from_line}\n"
+    elif lang == "uk":
+        header = "--- Попереднє повідомлення ---\n"
+        if sent_fmt:
+            header += f"Дата: {sent_fmt}\n"
+        header += f"Тема: {original_subject or '(без теми)'}\n"
+        if from_line:
+            header += f"Від: {from_line}\n"
     else:
         header = "--- Poprzednia wiadomość ---\n"
         if sent_fmt:
@@ -1688,6 +1797,18 @@ def format_quoted_previous_email(
         f"> {line}" if line.strip() else ">" for line in original_body.splitlines()
     )
     return f"{header}\n{quoted}"
+
+
+def normalize_signature_for_uk(signature: str) -> str:
+    sig = (signature or "").strip()
+    if not sig:
+        return SIGNATURE_UK
+    low = sig.lower()
+    if any(x in low for x in ("+49", "0049", "mfg", "gmbh", "kanbud")):
+        return SIGNATURE_UK
+    if "380" in sig or "свінчак" in low or "swinczak" in low:
+        return sig
+    return SIGNATURE_UK
 
 
 def build_reminder_email(
@@ -1708,6 +1829,8 @@ def build_reminder_email(
     if lang == "de":
         if not signature:
             signature = SIGNATURE_DE
+    elif lang == "uk":
+        signature = normalize_signature_for_uk(signature)
     else:
         signature = normalize_signature_for_pl(signature)
 
@@ -1721,6 +1844,14 @@ def build_reminder_email(
                 f"{f' vom {sent_date}' if sent_date else ''} "
                 f"noch einmal kurz ansprechen — bisher haben wir leider keine "
                 f"Rückmeldung erhalten. Wären Sie so freundlich, uns zeitnah zu antworten?"
+            )
+        elif lang == "uk":
+            intro = (
+                f"Доброго дня,\n\n"
+                f"повторно звертаюся щодо нашого запиту"
+                f"{f' від {sent_date}' if sent_date else ''} — "
+                f"на жаль, відповіді ще не отримали. "
+                f"Чи могли б Ви відповісти найближчим часом?"
             )
         else:
             intro = (
@@ -1737,6 +1868,13 @@ def build_reminder_email(
             f"{f' vom {sent_date}' if sent_date else ''} "
             f"freundlich in Erinnerung zu rufen. Könnten Sie uns bitte kurz "
             f"rückmelden oder ein unverbindliches Angebot zusenden?"
+        )
+    elif lang == "uk":
+        intro = (
+            f"Доброго дня,\n\n"
+            f"нагадую про наш запит щодо комерційної пропозиції"
+            f"{f' від {sent_date}' if sent_date else ''}. "
+            f"Буду вдячний за коротку відповідь або орієнтовну ціну."
         )
     else:
         intro = (
@@ -1946,19 +2084,22 @@ def verify_sent_contacts_from_imap(
     messages: list,
     logger: logging.Logger | None = None,
 ) -> int:
-    """Dla każdego kontaktu ze statusem sent — weryfikacja odpowiedzi od email_target."""
+    """Dla kontaktów ze statusem sent/reminder_sent — weryfikacja odpowiedzi od email_target."""
     updated = 0
     for _url, info in (cache.get("contacts") or {}).items():
         if not isinstance(info, dict):
             continue
-        if not is_sent_status(info.get("email_status", "")):
+        status = str(info.get("email_status") or "").strip().lower()
+        if status not in ("sent", "reminder_sent"):
             continue
         if not (info.get("email_target") or "").strip():
             continue
         had = contact_has_any_reply(info)
         verify_contact_reply_from_imap(info, config, messages, logger, cache=cache)
-        if contact_has_any_reply(info) and not had:
-            updated += 1
+        if contact_has_any_reply(info):
+            suppress_reminders_for_replied_contact(info)
+            if not had:
+                updated += 1
     return updated
 
 
@@ -1966,6 +2107,7 @@ def iter_reminder_candidates(
     cache: dict,
     min_hours: float | None = None,
     *,
+    second_after_hours: float | None = None,
     messages: list | None = None,
     config: ReplySyncConfig | None = None,
     logger: logging.Logger | None = None,
@@ -1973,6 +2115,8 @@ def iter_reminder_candidates(
     """[(place_url, contact, email_target), ...] — po weryfikacji IMAP jeśli podano messages."""
     if min_hours is None:
         min_hours = DEFAULT_REMINDER_MIN_HOURS
+    if second_after_hours is None:
+        second_after_hours = min_hours
     if messages is not None and config is not None:
         verify_sent_contacts_from_imap(cache, config, messages, logger)
     out = []
@@ -1983,7 +2127,9 @@ def iter_reminder_candidates(
         target = (info.get("email_target") or "").strip()
         if not target:
             continue
-        if needs_reminder(info, min_hours):
+        if needs_reminder(
+            info, min_hours, second_after_hours=second_after_hours
+        ):
             out.append((place_url, info, target))
     return out
 
