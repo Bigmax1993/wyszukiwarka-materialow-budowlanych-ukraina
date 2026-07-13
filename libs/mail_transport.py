@@ -352,6 +352,15 @@ def _append_to_imap_sent(
             pass
 
 
+def _should_append_imap_sent(username: str) -> bool:
+    """Gmail zapisuje wysłane po SMTP — IMAP APPEND dawałby duplikat w Wysłanych."""
+    if not _truthy(get_env_value(ENV_MAIL_ARCHIVE_IMAP) or "1"):
+        return False
+    if _is_gmail_address(username):
+        return False
+    return True
+
+
 def archive_sent_message(
     to_email: str,
     subject: str,
@@ -363,7 +372,7 @@ def archive_sent_message(
     attachment_paths: list[str] | None = None,
 ) -> None:
     """
-    Po udanej wysyłce SMTP: kopia .eml w folderze wyslane/ oraz dopisanie do IMAP Wysłane.
+    Po udanej wysyłce SMTP: kopia .eml w folderze wyslane/ oraz (poza Gmail) dopisanie do IMAP Wysłane.
     """
     username = get_mail_user()
     password = get_mail_password()
@@ -383,8 +392,12 @@ def archive_sent_message(
         logger.info("Kopia wysłanego maila (folder wyslane): %s", local_path)
     except Exception as e:
         logger.warning("Nie zapisano kopii w folderze wyslane: %s", e)
-    if password:
+    if password and _should_append_imap_sent(username):
         _append_to_imap_sent(username, password, msg, logger)
+    elif password and _is_gmail_address(username):
+        logger.info(
+            "Gmail: pominięto IMAP APPEND (kopia już w Wysłanych po wysyłce SMTP)."
+        )
 
 
 def archive_sent_email_message(
@@ -396,7 +409,7 @@ def archive_sent_email_message(
     attachment_paths: list[str] | None = None,
 ) -> None:
     """
-    Po SMTP: kopia .eml (wyslane/) + ten sam Message do folderu Wysłane (IMAP).
+    Po SMTP: kopia .eml (wyslane/) + (poza Gmail) ten sam Message do folderu Wysłane (IMAP).
     Użyj tej samej instancji msg co wysłano — widać Cc, załącznik i treść w skrzynce.
     """
     username = get_mail_user()
@@ -411,11 +424,11 @@ def archive_sent_email_message(
     if not password:
         logger.warning("Brak MAIL_PASSWORD — pominięto zapis IMAP Wysłane.")
         return
-    if not _truthy(get_env_value(ENV_MAIL_ARCHIVE_IMAP) or "1"):
-        logger.warning(
-            "MAIL_ARCHIVE_IMAP=0 — wiadomość nie trafi do folderu Wysłane na serwerze. "
-            "Ustaw MAIL_ARCHIVE_IMAP=1 w .env."
-        )
+    if not _should_append_imap_sent(username):
+        if _is_gmail_address(username):
+            logger.info(
+                "Gmail: pominięto IMAP APPEND (kopia już w Wysłanych po wysyłce SMTP)."
+            )
         return
     ok = _append_to_imap_sent(username, password, msg, logger)
     if not ok:
