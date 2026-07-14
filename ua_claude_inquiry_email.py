@@ -115,11 +115,14 @@ def claude_generate_inquiry_email_ua(
             )
         return None
 
+    if cache is None:
+        cache = {}
+
     key = _resolve_cache_key(
         cache_key=cache_key, contact_info=contact_info, company_name=company_name
     )
 
-    mail_cache = (cache or {}).setdefault("claude_inquiry_email", {})
+    mail_cache = cache.setdefault("claude_inquiry_email", {})
     cached = mail_cache.get(key)
     if _cached_inquiry_is_usable(cached):
         subj = str(cached.get("subject") or "").strip()

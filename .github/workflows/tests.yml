@@ -43,6 +43,7 @@ jobs:
             tests/test_ua_oblast_keywords.py \
             tests/test_ua_inquiry_email_uk.py \
             tests/test_ua_claude_inquiry_email.py \
+            tests/test_ua_claude_inquiry_email_mock_api.py \
             tests/test_ua_supplier_filter.py \
             tests/test_ua_materialy_integration.py \
             tests/test_ua_email_targeting.py \
