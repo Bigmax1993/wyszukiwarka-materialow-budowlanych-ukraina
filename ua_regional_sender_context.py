@@ -4,6 +4,33 @@ from __future__ import annotations
 
 from ua_oblast_keywords import OBLAST_CONFIG, _normalize_oblast_key
 
+# Obwody z dużymi ośrodkami — ten sam szablon maila co w mniejszych miastach regionu.
+MAJOR_CITY_OBLAST_KEYS: frozenset[str] = frozenset(
+    {
+        "Kyiv",
+        "Lvivska",
+        "Odeska",
+        "Kharkivska",
+        "Dnipropetrovska",
+        "Zaporizka",
+        "Vinnytska",
+        "Poltavska",
+        "Cherkaska",
+        "Zhytomyrska",
+        "Rivnenska",
+        "Volyn",
+        "Ternopilska",
+        "Ivano-Frankivska",
+        "Chernivetska",
+        "Zakarpatska",
+        "Khmelnytska",
+        "Chernihivska",
+        "Sumska",
+        "Mykolaivska",
+        "Kirovohradska",
+    }
+)
+
 
 def resolve_discovery_oblast(contact_info: dict | None, *, fallback: str = "") -> str:
     """Obwód z discovery (discovery_bundesland) lub z wiersza kontaktu."""
@@ -44,6 +71,15 @@ def oblast_region_label_uk(oblast_key: str) -> str:
     return oblast_key or "Україна"
 
 
+def major_city_examples_uk(oblast_key: str) -> str:
+    """Przykładowe duże miasta w obwodzie — do promptu Claude."""
+    key = _normalize_oblast_key(oblast_key)
+    cities = oblast_cities_uk(key, limit=3)
+    if not cities:
+        return ""
+    return ", ".join(cities)
+
+
 def build_regional_sender_instructions_uk(
     oblast_key: str,
     *,
@@ -53,11 +89,13 @@ def build_regional_sender_instructions_uk(
 ) -> str:
     """
     Instrukcje dla Claude: wybór realnej średniej firmy budowlanej z regionu
-    i wzmianka o aktualnej dużej budowie w tym regionie.
+    i wzmianka o aktualnej dużej budowie w tym regionie (także w dużych miastach).
     """
     key = _normalize_oblast_key(oblast_key)
     region = oblast_region_label_uk(key) if key in OBLAST_CONFIG else (oblast_key or "Україна")
     cities = ", ".join(oblast_cities_uk(key, limit=6)) or region
+    major_examples = major_city_examples_uk(key)
+    is_major_hub = key in MAJOR_CITY_OBLAST_KEYS
     name = (sender_name or "Свінчак Максим").strip()
     phone = (sender_phone or "+380977091141").strip()
     project_section = (
@@ -65,18 +103,30 @@ def build_regional_sender_instructions_uk(
         if (construction_project_block or "").strip()
         else ""
     )
+    major_city_note = ""
+    if is_major_hub and major_examples:
+        major_city_note = (
+            f"\n• Це правило діє ОДНАКОВО для великих міст ({major_examples}) "
+            f"і менших населених пунктів області — змінюються лише локальна компанія-відправник "
+            f"та конкретний об'єкт будівництва з бази (інша адреса)."
+        )
 
     return f"""РЕГІОН DISCOVERY (обов'язковий контекст)
 Область / регіон: {region}
 Ключ oblast: {key or "(невідомо)"}
 Основні міста регіону: {cities}
 
-ВІДПРАВНИК — СЕРЕДНЯ РЕГІОНАЛЬНА БУДІВЕЛЬНА КОМПАНІЯ
-• Обери РЕАЛЬНУ існуючу українську будівельну компанію СЕРЕДНЬОГО розміру, яка діє в цьому регіоні discovery.
-  Середній розмір = регіональний забудовник / підрядник (ТОВ, ПП), НЕ найбільший національний холдинг
-  (не Київміськбуд, UDP, Arkada, Будімпекс тощо) і не ФОП / «гаражна» фірма.
+ОДНАКОВИЙ ШАБЛОН ЛИСТА — ДЛЯ ВСІХ МІСТ (великих і регіональних)
+• Структура листа однакова: локальна будкомпанія середнього розміру + реальний об'єкт з блоку «ОБ'ЄКТ БУДІВНИЦТВА» + запит прайсу.
+• У великих обласних центрах (Київ, Львів, Одеса, Харків, Дніпро, Запоріжжя та ін.) НЕ змінюй формат — лише інша локальна фірма та інша адреса будмайданчика.{major_city_note}
+
+ВІДПРАВНИК — СЕРЕДНЯ ЛОКАЛЬНА БУДІВЕЛЬНА КОМПАНІЯ (місто / область discovery)
+• Обери РЕАЛЬНУ існуючу українську будівельну компанію СЕРЕДНЬОГО розміру, яка діє в цьому регіоні discovery (у тому числі у великому місті області).
+  Середній розмір = місцевий / регіональний забудовник або підрядник (ТОВ, ПП), НЕ найбільший національний холдинг
+  (не Київміськбуд, UDP, Arkada, Будімпекс, BI Group тощо) і не ФОП / «гаражна» фірма.
+• Компанія має виглядати як типовий місцевий гравець для цього міста — не «усенаціональна корпорація».
 • Представ себе як {name} — менеджер відділу продажу обраної компанії.
-• У листі чітко назви цю компанію та її роль (будівництво житла, комерційних чи промислових об'єктів у регіоні).
+• У листі чітко назви цю компанію та її роль (будівництво житла, комерційних чи промислових об'єктів у цьому місті / регіоні).
 {project_section}
 ПІДПИС (додай у body наприкінці):
 З повагою,

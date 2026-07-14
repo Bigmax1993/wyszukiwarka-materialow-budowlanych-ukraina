@@ -374,11 +374,40 @@ def address_present_in_body(body: str, address: str) -> bool:
     return False
 
 
-def pick_construction_project(oblast_key: str, seed: str) -> ConstructionProjectRef:
+def extract_city_from_address_uk(address: str) -> str:
+    """Wyciąga nazwę miasta z adresu UA (np. «м. Київ, вул. …»)."""
+    norm = (address or "").strip()
+    if not norm:
+        return ""
+    match = re.search(r"м\.?\s*([^,]+)", norm, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    parts = [part.strip() for part in norm.split(",") if part.strip()]
+    return parts[0] if parts else ""
+
+
+def _project_matches_city(project: ConstructionProjectRef, city: str) -> bool:
+    city_norm = _normalize_match_text(city)
+    if not city_norm:
+        return False
+    return city_norm in _normalize_match_text(project.address_uk)
+
+
+def pick_construction_project(
+    oblast_key: str,
+    seed: str,
+    *,
+    prefer_city: str = "",
+) -> ConstructionProjectRef:
     key = _normalize_oblast_key(oblast_key)
     pool = OBLAST_CONSTRUCTION_REFS.get(key)
     if not pool:
         return _DEFAULT_FALLBACK
+    city = (prefer_city or "").strip()
+    if city:
+        city_pool = tuple(project for project in pool if _project_matches_city(project, city))
+        if city_pool:
+            pool = city_pool
     digest = hashlib.sha256((seed or key).encode("utf-8")).hexdigest()
     idx = int(digest[:8], 16) % len(pool)
     return pool[idx]

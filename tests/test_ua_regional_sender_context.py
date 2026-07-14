@@ -51,3 +51,17 @@ def test_personalized_prompt_includes_regional_discovery_context():
     assert "адреса" in lowered
     assert "будмаркет" in lowered
     assert "україн" in lowered
+
+
+def test_kyiv_prompt_uses_same_template_as_regional_cities():
+    p = build_personalized_inquiry_email_prompt_uk(
+        company_name="ТОВ Будмаркет Київ",
+        oblast="Kyiv",
+        discovery_oblast="Kyiv",
+        address="м. Київ, вул. Хрещатик, 1",
+    )
+    lowered = p.lower()
+    assert "однаковий шаблон" in lowered
+    assert "київ" in lowered
+    assert "локальн" in lowered
+    assert "об'єкт будівництва" in lowered or "обʼєкт будівництва" in lowered

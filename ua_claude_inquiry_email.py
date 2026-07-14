@@ -12,10 +12,11 @@ from ua_claude_prompts import build_personalized_inquiry_email_prompt_uk
 from ua_materialy_inquiry_email_uk import ensure_inquiry_contact_in_body
 from ua_regional_construction_refs import (
     address_present_in_body,
+    extract_city_from_address_uk,
     inject_construction_project_context,
     pick_construction_project,
 )
-from ua_regional_sender_context import resolve_discovery_oblast
+from ua_regional_sender_context import oblast_primary_city_uk, resolve_discovery_oblast
 
 
 def _contact_blob(contact_info: dict | None) -> dict[str, str]:
@@ -128,7 +129,14 @@ def claude_generate_inquiry_email_ua(
     ctx = _contact_blob(contact_info)
     display_name = ctx["company_name"] or (company_name or "").strip() or "Постачальник"
     region_key = resolve_discovery_oblast(ctx, fallback=ctx.get("oblast") or "")
-    project = pick_construction_project(region_key, seed=key or display_name)
+    supplier_city = extract_city_from_address_uk(ctx.get("address") or "")
+    if not supplier_city:
+        supplier_city = oblast_primary_city_uk(region_key) if region_key else ""
+    project = pick_construction_project(
+        region_key,
+        seed=key or display_name,
+        prefer_city=supplier_city,
+    )
     prompt = build_personalized_inquiry_email_prompt_uk(
         company_name=display_name,
         website=ctx["website"],
