@@ -102,6 +102,6 @@ def test_generate_email_fallback_template(monkeypatch):
 def test_discovery_funnel_counters():
     funnel = scraper.new_discovery_funnel()
     funnel["serper_queries"] = 5
-    funnel["pending_saved"] = 12
+    funnel["rows_saved"] = 12
     scraper.log_discovery_funnel(funnel, _LOGGER)
-    assert funnel["pending_saved"] == 12
+    assert funnel["rows_saved"] == 12

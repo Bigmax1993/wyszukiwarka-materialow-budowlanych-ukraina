@@ -334,5 +334,91 @@ class CampaignPathsRegression(unittest.TestCase):
         self.assertTrue(str(paths["output_file"]).endswith("ua_materialy_kontakte.xlsx"))
 
 
+class DiscoveryQualityGateRegression(unittest.TestCase):
+    def _kyiv_rows(self):
+        return [
+            {
+                "url": "https://a.ua",
+                "bundesland": "Kyiv",
+                "retail_verified": True,
+            },
+            {
+                "url": "https://b.ua",
+                "bundesland": "Kyiv",
+                "verification_reason": scraper.PENDING_WWW_VERIFY_REASON,
+                "retail_verified": False,
+            },
+            {
+                "url": "https://c.ua",
+                "bundesland": "Lvivska",
+                "retail_verified": True,
+            },
+        ]
+
+    def test_quality_count_uses_verified_when_claude_verify_on(self):
+        rows = self._kyiv_rows()
+        cache = {"contacts": {}}
+        with patch.object(scraper, "ENABLE_CLAUDE_PAGE_VERIFY", True):
+            self.assertEqual(
+                scraper.discovery_quality_count_for_land(rows, cache, "Kyiv"), 1
+            )
+            self.assertEqual(
+                scraper.discovery_quality_metric_label(), "retail_verified"
+            )
+
+    def test_quality_count_uses_pending_when_claude_verify_off(self):
+        rows = self._kyiv_rows()
+        cache = {"contacts": {}}
+        with patch.object(scraper, "ENABLE_CLAUDE_PAGE_VERIFY", False):
+            self.assertEqual(
+                scraper.discovery_quality_count_for_land(rows, cache, "Kyiv"), 1
+            )
+            self.assertEqual(
+                scraper.discovery_quality_metric_label(),
+                scraper.PENDING_WWW_VERIFY_REASON,
+            )
+
+    def test_quality_gate_passes_with_enough_verified(self):
+        rows = [
+            {
+                "url": f"https://{i}.ua",
+                "bundesland": "Kyiv",
+                "retail_verified": True,
+            }
+            for i in range(scraper.DISCOVERY_MIN_PENDING_GHA_FAIL)
+        ]
+        with patch.object(scraper, "ENABLE_CLAUDE_PAGE_VERIFY", True):
+            with patch.object(scraper, "is_serper_api_exhausted", return_value=False):
+                with patch.object(
+                    scraper, "is_scraper_runtime_limit_reached", return_value=False
+                ):
+                    scraper._enforce_discovery_min_quality_gate(
+                        scraper.discovery_quality_count_for_land(rows, {}, "Kyiv"),
+                        {},
+                        scope_label=" dla Kyiv",
+                    )
+
+    def test_quality_gate_fails_with_too_few_verified(self):
+        rows = [
+            {
+                "url": "https://only-one.ua",
+                "bundesland": "Kyiv",
+                "retail_verified": True,
+            }
+        ]
+        with patch.object(scraper, "ENABLE_CLAUDE_PAGE_VERIFY", True):
+            with patch.object(scraper, "is_serper_api_exhausted", return_value=False):
+                with patch.object(
+                    scraper, "is_scraper_runtime_limit_reached", return_value=False
+                ):
+                    with self.assertRaises(RuntimeError) as ctx:
+                        scraper._enforce_discovery_min_quality_gate(
+                            scraper.discovery_quality_count_for_land(rows, {}, "Kyiv"),
+                            {},
+                            scope_label=" dla Kyiv",
+                        )
+        self.assertIn("retail_verified", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

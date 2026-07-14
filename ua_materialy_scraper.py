@@ -2455,7 +2455,7 @@ def new_discovery_funnel() -> dict:
         "raw_hits": 0,
         "filtered_serper": 0,
         "filtered_large_serper": 0,
-        "pending_saved": 0,
+        "rows_saved": 0,
         "rejected_excel": 0,
         "claude_rounds": 0,
         "claude_terms": 0,
@@ -2483,7 +2483,7 @@ def log_discovery_funnel(funnel: dict, logger: logging.Logger) -> None:
     msg = (
         "[LEjek] serper_queries={serper_queries} | api_zero={api_zero_terms} | "
         "raw_hits={raw_hits} | filtered_serper={filtered_serper} | "
-        "filtered_large={filtered_large_serper} | pending_saved={pending_saved} | "
+        "filtered_large={filtered_large_serper} | rows_saved={rows_saved} | "
         "rejected_excel={rejected_excel} | claude_rounds={claude_rounds} | "
         "claude_terms={claude_terms}"
     ).format(**funnel)
@@ -2650,6 +2650,61 @@ def count_retail_verified_for_bundesland(rows: list, land: str) -> int:
         if tagged == land_norm or bl == land_norm:
             count += 1
     return count
+
+
+def count_retail_verified_bundesweit(rows: list) -> int:
+    return sum(1 for row in (rows or []) if row.get("retail_verified"))
+
+
+def discovery_quality_count_for_land(
+    rows: list, cache: dict, land: str, *, use_verified: bool | None = None
+) -> int:
+    """Bramka jakości discovery: verified przy Claude www-verify, inaczej pending."""
+    if ENABLE_CLAUDE_PAGE_VERIFY if use_verified is None else use_verified:
+        return count_retail_verified_for_bundesland(rows, land)
+    return count_pending_for_bundesland(rows, cache, land)
+
+
+def discovery_quality_count_bundesweit(
+    rows: list, cache: dict, *, use_verified: bool | None = None
+) -> int:
+    if ENABLE_CLAUDE_PAGE_VERIFY if use_verified is None else use_verified:
+        return count_retail_verified_bundesweit(rows)
+    return count_all_pending_contacts(rows, cache)
+
+
+def discovery_quality_metric_label(*, use_verified: bool | None = None) -> str:
+    verified = ENABLE_CLAUDE_PAGE_VERIFY if use_verified is None else use_verified
+    return "retail_verified" if verified else PENDING_WWW_VERIFY_REASON
+
+
+def _enforce_discovery_min_quality_gate(
+    quality_count: int,
+    cache: dict,
+    *,
+    scope_label: str,
+    use_verified: bool | None = None,
+) -> None:
+    metric = discovery_quality_metric_label(use_verified=use_verified)
+    min_required = DISCOVERY_MIN_PENDING_GHA_FAIL
+    if quality_count >= min_required:
+        return
+    if is_serper_api_exhausted(cache):
+        console_step(
+            f"Serper API wyczerpane — kontynuuj z {quality_count} {metric} "
+            f"(poniżej progu {min_required}){scope_label}."
+        )
+        return
+    if is_scraper_runtime_limit_reached():
+        console_step(
+            f"Limit czasu — kontynuuj z {quality_count} {metric} "
+            f"(poniżej progu {min_required}){scope_label}."
+        )
+        return
+    raise RuntimeError(
+        f"Za mało kandydatów {metric} ({quality_count} < {min_required})"
+        f"{scope_label}. Sprawdź [LEjek] w logu."
+    )
 
 
 def request_with_retry(
@@ -3143,8 +3198,10 @@ def _needs_claude_discovery_supplement(
     serper_only: bool,
 ) -> bool:
     if rotate_mode and serper_only:
-        pending = count_pending_for_bundesland(all_rows, cache, rotation_land or "")
-        return pending < MIN_CONTACTS_TARGET
+        quality = discovery_quality_count_for_land(
+            all_rows, cache, rotation_land or ""
+        )
+        return quality < MIN_CONTACTS_TARGET
     return not _discovery_target_reached(
         all_rows,
         total_new_rows=total_new_rows,
@@ -3199,7 +3256,7 @@ def _run_claude_discovery_supplement(
                 )
                 break
 
-        pending_before = count_pending_for_bundesland(
+        quality_before = discovery_quality_count_for_land(
             all_rows, cache, rotation_land or ""
         )
 
@@ -3250,11 +3307,12 @@ def _run_claude_discovery_supplement(
         serper_kw["total_new_rows"] = total_new_rows
         serper_kw["stop_requested"] = stop_requested
 
-        pending_after = count_pending_for_bundesland(
+        quality_after = discovery_quality_count_for_land(
             all_rows, cache, rotation_land or ""
         )
-        gain = pending_after - pending_before
-        console_step(f"Claude discovery runda {round_n}: +{gain} pending")
+        gain = quality_after - quality_before
+        metric = discovery_quality_metric_label()
+        console_step(f"Claude discovery runda {round_n}: +{gain} {metric}")
         if gain < CLAUDE_DISCOVERY_MIN_GAIN:
             console_step(
                 f"Claude discovery: zysk +{gain} < {CLAUDE_DISCOVERY_MIN_GAIN}, stop"
@@ -5745,7 +5803,7 @@ def _process_serper_terms(
                 added += 1
                 total_new_rows += 1
                 if serper_only and funnel is not None:
-                    funnel["pending_saved"] = funnel.get("pending_saved", 0) + 1
+                    funnel["rows_saved"] = funnel.get("rows_saved", 0) + 1
             if max_new_rows is not None and total_new_rows >= max_new_rows:
                 stop_requested = True
             persist_progress(all_rows, cache, logger, reason=f"serper +{total_new_rows}")
@@ -6068,56 +6126,54 @@ def run_scraper(
                     f"(cel {MIN_CONTACTS_TARGET}). Land zostaje do kolejnego tygodnia."
                 )
             elif rotate_mode and serper_only:
+                rotation_land_name = rotation_land or ""
                 pending_land = count_pending_for_bundesland(
-                    all_rows, cache, rotation_land or ""
+                    all_rows, cache, rotation_land_name
+                )
+                verified_land = count_retail_verified_for_bundesland(
+                    all_rows, rotation_land_name
+                )
+                quality_land = discovery_quality_count_for_land(
+                    all_rows, cache, rotation_land_name
                 )
                 log_discovery_funnel(funnel, logger)
-                console_step(
-                    f"Serper-only: {total_new_rows} nowych, "
-                    f"{pending_land} pending dla {rotation_land} "
-                    f"({PENDING_WWW_VERIFY_REASON})."
+                if ENABLE_CLAUDE_PAGE_VERIFY:
+                    console_step(
+                        f"Serper-only: {total_new_rows} nowych, "
+                        f"{verified_land} verified, {pending_land} pending "
+                        f"dla {rotation_land_name}."
+                    )
+                else:
+                    console_step(
+                        f"Serper-only: {total_new_rows} nowych, "
+                        f"{pending_land} pending dla {rotation_land_name} "
+                        f"({PENDING_WWW_VERIFY_REASON})."
+                    )
+                _enforce_discovery_min_quality_gate(
+                    quality_land,
+                    cache,
+                    scope_label=f" dla {rotation_land_name}",
                 )
-                if pending_land < DISCOVERY_MIN_PENDING_GHA_FAIL:
-                    if is_serper_api_exhausted(cache):
-                        console_step(
-                            f"Serper API wyczerpane — kontynuuj z {pending_land} pending "
-                            f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
-                        )
-                    elif is_scraper_runtime_limit_reached():
-                        console_step(
-                            f"Limit czasu — kontynuuj z {pending_land} pending "
-                            f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
-                        )
-                    else:
-                        raise RuntimeError(
-                            f"Za mało kandydatów pending ({pending_land} < "
-                            f"{DISCOVERY_MIN_PENDING_GHA_FAIL}) dla {rotation_land}. "
-                            "Sprawdź [LEjek] w logu."
-                        )
             elif serper_only:
                 pending_all = count_all_pending_contacts(all_rows, cache)
+                verified_all = count_retail_verified_bundesweit(all_rows)
+                quality_all = discovery_quality_count_bundesweit(all_rows, cache)
                 log_discovery_funnel(funnel, logger)
-                console_step(
-                    f"Serper-only bundesweit: {total_new_rows} nowych, "
-                    f"{pending_all} pending ({PENDING_WWW_VERIFY_REASON})."
+                if ENABLE_CLAUDE_PAGE_VERIFY:
+                    console_step(
+                        f"Serper-only bundesweit: {total_new_rows} nowych, "
+                        f"{verified_all} verified, {pending_all} pending."
+                    )
+                else:
+                    console_step(
+                        f"Serper-only bundesweit: {total_new_rows} nowych, "
+                        f"{pending_all} pending ({PENDING_WWW_VERIFY_REASON})."
+                    )
+                _enforce_discovery_min_quality_gate(
+                    quality_all,
+                    cache,
+                    scope_label=" w całej kampanii",
                 )
-                if pending_all < DISCOVERY_MIN_PENDING_GHA_FAIL:
-                    if is_serper_api_exhausted(cache):
-                        console_step(
-                            f"Serper API wyczerpane — kontynuuj z {pending_all} pending "
-                            f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
-                        )
-                    elif is_scraper_runtime_limit_reached():
-                        console_step(
-                            f"Limit czasu — kontynuuj z {pending_all} pending "
-                            f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
-                        )
-                    else:
-                        raise RuntimeError(
-                            f"Za mało kandydatów pending ({pending_all} < "
-                            f"{DISCOVERY_MIN_PENDING_GHA_FAIL}) w całych Niemczech. "
-                            "Sprawdź [LEjek] w logu."
-                        )
 
         if enable_auto_email:
             rows_with_email = sum(
