@@ -61,6 +61,13 @@ def test_prompt_requires_json_output():
     assert '"body"' in p
 
 
+def test_prompt_requires_paragraph_layout():
+    p = build_personalized_inquiry_email_prompt_uk(company_name="Test")
+    assert "ФОРМАТ ЛИСТА" in p
+    assert "\\n\\n" in p
+    assert "З повагою," in p
+
+
 def test_cached_inquiry_without_construction_address_is_ignored():
     from ua_claude_inquiry_email import _cached_inquiry_is_usable
 

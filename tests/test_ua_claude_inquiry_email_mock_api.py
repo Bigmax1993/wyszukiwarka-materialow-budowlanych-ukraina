@@ -84,6 +84,7 @@ def test_kyiv_inquiry_email_mock_api_uses_kyiv_project(mock_gen):
     )
     assert subject
     assert address_present_in_body(body, project.address_uk)
+    assert "\n\n" in body
     assert mock_gen.call_count == 1
     cached = cache["claude_inquiry_email"][KYIV_CONTACT["official_website"]]
     assert cached["construction_address"] == project.address_uk
@@ -152,6 +153,36 @@ def test_inquiry_email_injects_address_when_claude_omits_it(mock_gen):
     )
     assert address_present_in_body(body, project.address_uk)
     assert project.name_uk in body
+
+
+@patch("ua_claude_inquiry_email.claude_generate_text")
+def test_inquiry_email_formats_dense_single_line_body(mock_gen):
+    from ua_claude_inquiry_email import claude_generate_inquiry_email_ua
+
+    project = pick_construction_project(
+        "Kyiv", seed="https://dense.example.ua", prefer_city="Київ"
+    )
+    dense_body = (
+        f"Шановні пані та панове, звертаюся від імені БК «Альтбуд». "
+        f"Будуємо об'єкт за адресою {project.address_uk}. "
+        f"Просимо прайс-лист. "
+        f"З повагою, Свінчак Максим Менеджер БК «Альтбуд» Tel.: +380977091141"
+    )
+    mock_gen.return_value = (
+        _email_json("Запит прайсу — ТОВ Dense", dense_body),
+        "claude-sonnet-mock",
+    )
+    cache: dict = {}
+    _, body = claude_generate_inquiry_email_ua(
+        "ТОВ Dense",
+        _LOGGER,
+        cache,
+        contact_info=KYIV_CONTACT,
+        cache_key="https://dense.example.ua",
+    )
+    assert "\n\n" in body
+    assert body.startswith("Шановні пані та панове,\n\n")
+    assert "\n\nЗ повагою," in body
 
 
 @patch("ua_claude_inquiry_email.claude_generate_text")

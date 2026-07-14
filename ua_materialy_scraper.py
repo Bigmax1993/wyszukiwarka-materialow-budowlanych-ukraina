@@ -2323,10 +2323,15 @@ def sanitize_generated_email(subject: str, body: str, company_name: str):
     for term in EMAIL_SPAMMY_TERMS:
         if term in lowered_body:
             clean_body = re.sub(term, "", clean_body, flags=re.IGNORECASE)
-    from ua_materialy_inquiry_email_uk import strip_de_campaign_branding, strip_german_phones_from_text
+    from ua_materialy_inquiry_email_uk import (
+        format_inquiry_email_body_uk,
+        strip_de_campaign_branding,
+        strip_german_phones_from_text,
+    )
 
     clean_body = strip_german_phones_from_text(clean_body)
     clean_body = strip_de_campaign_branding(clean_body)
+    clean_body = format_inquiry_email_body_uk(clean_body)
     clean_body = re.sub(r"\n{3,}", "\n\n", clean_body).strip()
     return clean_subject, clean_body
 

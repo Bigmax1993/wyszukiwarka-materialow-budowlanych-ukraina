@@ -52,8 +52,114 @@ def strip_de_campaign_branding(text: str) -> str:
         return ""
     out = strip_german_phones_from_text(text)
     out = _DE_CAMPAIGN_BRANDING_RE.sub("", out)
-    out = re.sub(r"\s+", " ", out).strip(" ,;-")
-    return out
+    # Zwiń tylko spacje w poziomie — zachowaj \n (akapity maila).
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in out.splitlines()]
+    out = "\n".join(lines)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip().strip(" ,;-")
+
+
+_SALUTATION_PREFIX_RE = re.compile(
+    r"^(Шановні пані та панове,?)\s*",
+    re.IGNORECASE,
+)
+_SIGNATURE_MARKER_RE = re.compile(r"\b(З повагою,?)\b", re.IGNORECASE)
+_TEL_LINE_RE = re.compile(
+    r"\b(?:Tel\.?|Тел\.?):?\s*\+380[\d\s().-]+",
+    re.IGNORECASE,
+)
+_WEB_INLINE_RE = re.compile(r"(?:https?://\S+|www\.\S+)", re.IGNORECASE)
+
+
+def format_inquiry_email_body_uk(body: str) -> str:
+    """Układa treść maila: akapity, odstępy między blokami, czytelny podpis."""
+    if not body:
+        return ""
+    text = body.replace("\r\n", "\n").replace("\r", "\n").strip()
+    lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in text.split("\n")]
+    text = "\n".join(lines)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    if "\n" not in text:
+        text = _format_dense_inquiry_body_uk(text)
+    else:
+        text = _ensure_salutation_spacing_uk(text)
+        text = _ensure_signature_spacing_uk(text)
+        text = _normalize_signature_lines_uk(text)
+
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text
+
+
+def _ensure_salutation_spacing_uk(text: str) -> str:
+    match = _SALUTATION_PREFIX_RE.match(text)
+    if not match:
+        return text
+    salutation = match.group(1).rstrip(",") + ","
+    rest = text[match.end() :].lstrip()
+    if rest.startswith("\n\n"):
+        return text
+    if rest.startswith("\n"):
+        return f"{salutation}\n{rest.lstrip()}"
+    return f"{salutation}\n\n{rest}"
+
+
+def _ensure_signature_spacing_uk(text: str) -> str:
+    match = _SIGNATURE_MARKER_RE.search(text)
+    if not match:
+        return text
+    before = text[: match.start()].rstrip()
+    after = text[match.start() :].lstrip()
+    if before.endswith("\n\n") or not before:
+        return text
+    return f"{before}\n\n{after}"
+
+
+def _format_dense_inquiry_body_uk(text: str) -> str:
+    match = _SIGNATURE_MARKER_RE.search(text)
+    if match:
+        main = text[: match.start()].strip()
+        signature = _normalize_signature_lines_uk(text[match.start() :].strip())
+        main = _ensure_salutation_spacing_uk(main)
+        return f"{main.rstrip()}\n\n{signature}"
+    return _ensure_salutation_spacing_uk(text)
+
+
+def _normalize_signature_lines_uk(text: str) -> str:
+    match = _SIGNATURE_MARKER_RE.search(text)
+    if not match:
+        return text
+    before = text[: match.start()].rstrip()
+    marker = match.group(1)
+    if not marker.endswith(","):
+        marker = marker + ","
+    rest = text[match.end() :].strip()
+    if not rest:
+        signature = marker
+    else:
+        tel_match = _TEL_LINE_RE.search(rest)
+        tel = tel_match.group(0).strip() if tel_match else ""
+        if tel_match:
+            rest = (rest[: tel_match.start()] + rest[tel_match.end() :]).strip(" ,;")
+
+        web_match = _WEB_INLINE_RE.search(rest)
+        web = web_match.group(0).strip() if web_match else ""
+        if web_match:
+            rest = (rest[: web_match.start()] + rest[web_match.end() :]).strip(" ,;")
+
+        name_title = re.sub(r"\s+", " ", rest).strip(" ,;")
+        lines = [marker]
+        if name_title:
+            lines.append(name_title)
+        if web:
+            lines.append(web)
+        if tel:
+            lines.append(tel)
+        signature = "\n".join(lines)
+
+    if before:
+        return f"{before}\n\n{signature}"
+    return signature
 
 
 def _is_legacy_de_sender_name(text: str) -> bool:

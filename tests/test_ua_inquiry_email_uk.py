@@ -8,6 +8,7 @@ from ua_materialy_inquiry_email_uk import (
     build_fixed_material_inquiry_uk,
     build_inquiry_signature_uk,
     build_sender_contact_line_uk,
+    format_inquiry_email_body_uk,
     inquiry_phone,
     inquiry_sender_name,
     is_german_phone,
@@ -85,6 +86,39 @@ def test_strip_de_campaign_branding():
     cleaned = strip_de_campaign_branding(raw)
     assert "mfg" not in cleaned.lower()
     assert "gmbh" not in cleaned.lower()
+
+
+def test_strip_de_campaign_branding_preserves_paragraphs():
+    raw = "Шановні пані та панове,\n\nПерший абзац.\n\nЗ повагою,\nТест"
+    cleaned = strip_de_campaign_branding(raw)
+    assert "\n\n" in cleaned
+    assert cleaned.startswith("Шановні пані та панове,")
+    assert "З повагою," in cleaned
+
+
+def test_format_inquiry_email_body_uk_dense_single_line():
+    dense = (
+        "Шановні пані та панове, звертаюся до Вас від імені БК «Альтбуд». "
+        "Просимо прайс-лист на цемент та цеглу. "
+        "З повагою, Свінчак Максим Менеджер БК «Альтбуд» www.altbud.ua Tel.: +380977091141"
+    )
+    formatted = format_inquiry_email_body_uk(dense)
+    assert formatted.startswith("Шановні пані та панове,\n\n")
+    assert "\n\nЗ повагою," in formatted
+    assert "+380977091141" in formatted
+    assert "www.altbud.ua" in formatted
+
+
+def test_format_inquiry_email_body_uk_preserves_existing_paragraphs():
+    body = "Шановні пані та панове,\n\nАбзац один.\n\nАбзац два.\n\nЗ повагою,\nІм'я"
+    formatted = format_inquiry_email_body_uk(body)
+    assert formatted.count("\n\n") >= 3
+
+
+def test_build_inquiry_signature_has_line_breaks():
+    sig = build_inquiry_signature_uk()
+    assert "\n" in sig
+    assert "З повагою," in sig
 
 
 def test_legacy_sender_falls_back_to_ukrainian_name(monkeypatch):

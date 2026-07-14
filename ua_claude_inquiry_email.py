@@ -173,6 +173,9 @@ def claude_generate_inquiry_email_ua(
 
         body = strip_german_phones_from_text(body)
         body = strip_de_campaign_branding(body)
+        from ua_materialy_inquiry_email_uk import format_inquiry_email_body_uk
+
+        body = format_inquiry_email_body_uk(body)
         if not address_present_in_body(body, project.address_uk):
             raise ValueError(
                 f"Claude inquiry email bez zweryfikowanego adresu budowy: {project.address_uk}"
