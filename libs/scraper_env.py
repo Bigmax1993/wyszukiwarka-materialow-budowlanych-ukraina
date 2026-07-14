@@ -62,6 +62,7 @@ ENV_GMAIL_USER = "GMAIL_USER"
 ENV_GMAIL_APP_PASSWORD = "GMAIL_APP_PASSWORD"
 ENV_GMAIL_SENDER_NAME = "GMAIL_SENDER_NAME"
 ENV_ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
+ENV_REQUIRE_CLAUDE_INQUIRY_EMAIL = "REQUIRE_CLAUDE_INQUIRY_EMAIL"
 ENV_CLAUDE_MODEL = "CLAUDE_MODEL"
 ENV_CLAUDE_MODEL_VERIFY = "CLAUDE_MODEL_VERIFY"
 ENV_CLAUDE_MODEL_FAST = "CLAUDE_MODEL_FAST"
@@ -126,6 +127,16 @@ def get_serper_api_key() -> str:
 
 def get_anthropic_api_key() -> str:
     return get_env_value(ENV_ANTHROPIC_API_KEY)
+
+
+def require_claude_inquiry_email() -> bool:
+    """GHA / send: wymusza wywołanie Claude zamiast stałego szablonu UA."""
+    return get_env_value(ENV_REQUIRE_CLAUDE_INQUIRY_EMAIL).strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
 def get_mail_user() -> str:

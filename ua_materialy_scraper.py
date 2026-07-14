@@ -5114,7 +5114,10 @@ def generate_email_content(
 ):
     """Spersonalizowany mail UA przez Claude (unikalny per firma)."""
     from email_custom_template import inquiry_try_custom
+    from scraper_env import require_claude_inquiry_email
     from ua_claude_inquiry_email import claude_generate_inquiry_email_ua
+
+    claude_required = require_claude_inquiry_email()
 
     display_name = (
         (contact_info or {}).get("company_name_clean")
@@ -5153,11 +5156,18 @@ def generate_email_content(
             cache_key=place_url or (contact_info or {}).get("url") or "",
             style_hint=style,
             on_step=console_step,
+            require=claude_required,
         )
         if generated:
             subject, body = generated
             console_step(f"E-mail: Claude UA (personalizowany) → {display_name}")
             return sanitize_generated_email(subject, body, display_name)
+
+    if claude_required:
+        raise RuntimeError(
+            f"Claude inquiry email wymagany (REQUIRE_CLAUDE_INQUIRY_EMAIL), "
+            f"ale niedostępny dla {display_name}"
+        )
 
     console_step(f"E-mail: stały szablon UA (fallback) → {display_name}")
     return subject_hint, _assemble_inquiry_email_body(display_name)
@@ -5308,6 +5318,14 @@ def _process_email_jobs(
             continue
         if force_resend:
             cache.setdefault("email_suppression", {}).pop(target.lower(), None)
+            from ua_claude_inquiry_email import invalidate_claude_inquiry_email_cache
+
+            invalidate_claude_inquiry_email_cache(
+                cache,
+                contact_info=contact_info,
+                cache_key=mail.get("place_url") or "",
+                company_name=mail.get("company_name", "Firma"),
+            )
         subject, body = generate_email_content(
             mail.get("company_name", "Firma"),
             logger,

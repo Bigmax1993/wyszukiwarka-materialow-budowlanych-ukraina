@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import pytest
+
 from ua_claude_prompts import build_personalized_inquiry_email_prompt_uk
 from ua_materialy_inquiry_email_uk import DEFAULT_INQUIRY_PHONE_UK, DEFAULT_INQUIRY_SENDER_NAME_UK
 
@@ -57,3 +59,44 @@ def test_prompt_requires_json_output():
     p = build_personalized_inquiry_email_prompt_uk(company_name="Test")
     assert '"subject"' in p
     assert '"body"' in p
+
+
+def test_cached_inquiry_without_construction_address_is_ignored():
+    from ua_claude_inquiry_email import _cached_inquiry_is_usable
+
+    assert not _cached_inquiry_is_usable(
+        {"subject": "Test", "body": "Treść bez adresu budowy."}
+    )
+
+
+def test_cached_inquiry_with_verified_address_is_reused():
+    from ua_regional_construction_refs import pick_construction_project
+    from ua_claude_inquiry_email import _cached_inquiry_is_usable
+
+    project = pick_construction_project("Khmelnytska", seed="demo")
+    body = f"Будуємо об'єкт за адресою {project.address_uk}."
+    assert _cached_inquiry_is_usable(
+        {
+            "subject": "Test",
+            "body": body,
+            "construction_address": project.address_uk,
+        }
+    )
+
+
+def test_require_claude_raises_without_api_key(monkeypatch):
+    import logging
+
+    from ua_claude_inquiry_email import claude_generate_inquiry_email_ua
+
+    monkeypatch.setattr(
+        "ua_claude_inquiry_email.get_anthropic_api_key",
+        lambda: "",
+    )
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+        claude_generate_inquiry_email_ua(
+            "Test ТОВ",
+            logging.getLogger("test"),
+            {},
+            require=True,
+        )
