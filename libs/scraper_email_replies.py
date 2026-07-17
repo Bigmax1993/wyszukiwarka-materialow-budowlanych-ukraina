@@ -120,8 +120,31 @@ BOUNCE_HINTS = (
     "undeliverable",
     "delivery status notification",
     "nie dostarczono",
+    "nie została dostarczona",
+    "nie zostala dostarczona",
     "mailbox unavailable",
     "user unknown",
+    "unknown user",
+    "użytkownik nieznany",
+    "uzytkownik nieznany",
+    "nie znaleziono adresu",
+    "address not found",
+    "recipient address rejected",
+    "550 ",
+    "553 ",
+    "554 ",
+)
+
+BOUNCE_SENDER_LOCALPARTS = (
+    "mailer-daemon",
+    "mailerdaemon",
+    "postmaster",
+    "mail delivery subsystem",
+)
+
+EMAIL_IN_BOUNCE_RE = re.compile(
+    r"[a-zA-Z0-9._%+\-']+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}",
+    re.IGNORECASE,
 )
 
 QUESTION_HINTS_PL = (
@@ -496,6 +519,8 @@ def repair_misassigned_replies(cache: dict, logger: logging.Logger | None = None
         target = normalize_email(info.get("email_target") or "")
         if not reply_from:
             continue
+        if contact_is_bounced(info):
+            continue
         if target and reply_from == target:
             continue
         clear_reply_fields(info)
@@ -675,6 +700,80 @@ def classify_reply_text(text: str, lang: str = "pl") -> str:
     return "replied_no_price"
 
 
+def is_bounce_sender(from_addr: str) -> bool:
+    em = normalize_email(from_addr)
+    if not em:
+        return False
+    local = em.split("@", 1)[0]
+    return any(h in local for h in BOUNCE_SENDER_LOCALPARTS)
+
+
+def is_bounce_notification(from_addr: str, subject: str, body: str) -> bool:
+    if is_bounce_sender(from_addr):
+        return True
+    combined = f"{subject or ''}\n{body or ''}".lower()
+    return any(h in combined for h in BOUNCE_HINTS)
+
+
+def extract_bounce_recipients(
+    text: str,
+    *,
+    known_targets: set[str] | None = None,
+) -> list[str]:
+    """Adresy odbiorcy z treści DSN (bounce); preferuj znane email_target z cache."""
+    skip_localparts = BOUNCE_SENDER_LOCALPARTS + (
+        "noreply",
+        "no-reply",
+        "do-not-reply",
+    )
+    found: list[str] = []
+    seen: set[str] = set()
+    for match in EMAIL_IN_BOUNCE_RE.finditer(text or ""):
+        em = normalize_email(match.group(0))
+        if not em or em in seen:
+            continue
+        local = em.split("@", 1)[0]
+        if any(h in local for h in skip_localparts):
+            continue
+        if em.endswith("@googlemail.com") and "mailer" in local:
+            continue
+        seen.add(em)
+        found.append(em)
+    if known_targets:
+        matched = [em for em in found if em in known_targets]
+        if matched:
+            return matched
+    return found
+
+
+def contact_is_bounced(contact: dict) -> bool:
+    if str(contact.get("email_status") or "").strip().lower() == "bounced":
+        return True
+    return str(contact.get("reply_status") or "").strip().lower() == "bounce"
+
+
+def suppress_reminders_for_bounced_contact(
+    contact: dict,
+    *,
+    reply_at: str = "",
+    snippet: str = "",
+) -> bool:
+    """Trwale wyłącz przypomnienia po bounce (nieznany adres, 550 itd.)."""
+    already = contact_is_bounced(contact) and contact.get("reminders_suppressed")
+    if reply_at and not contact.get("reply_at"):
+        contact["reply_at"] = reply_at
+    if snippet and not (contact.get("reply_body_snippet") or "").strip():
+        contact["reply_body_snippet"] = snippet[:2000]
+    contact["reply_status"] = "bounce"
+    contact["has_reply"] = False
+    contact["reminders_suppressed"] = True
+    contact["email_status"] = "bounced"
+    contact["reminder_status"] = "skipped_bounce"
+    contact["requires_intervention"] = False
+    contact["intervention_status"] = ""
+    return not already
+
+
 def _parse_amount(val: str) -> float | None:
     s = (val or "").strip().replace("\u00a0", " ").replace(" ", "")
     if not s:
@@ -846,10 +945,13 @@ def contact_has_inbound_reply(contact: dict) -> bool:
 
 
 def contact_has_any_reply(contact: dict) -> bool:
-    """Brak przypomnień — odpowiedź lub trwała blokada po odpowiedzi."""
+    """Brak przypomnień — odpowiedź, bounce lub trwała blokada."""
     if contact.get("reminders_suppressed"):
         return True
-    if str(contact.get("email_status") or "").strip().lower() == "replied":
+    status = str(contact.get("email_status") or "").strip().lower()
+    if status in ("replied", "bounced"):
+        return True
+    if contact_is_bounced(contact):
         return True
     return contact_has_inbound_reply(contact)
 
@@ -861,8 +963,10 @@ def suppress_reminders_for_replied_contact(contact: dict) -> bool:
     """
     if contact.get("reminders_suppressed") and str(
         contact.get("email_status") or ""
-    ).strip().lower() == "replied":
+    ).strip().lower() in ("replied", "bounced"):
         return False
+    if contact_is_bounced(contact):
+        return suppress_reminders_for_bounced_contact(contact)
     if not contact_has_inbound_reply(contact):
         return False
     contact["reminders_suppressed"] = True
@@ -1074,17 +1178,21 @@ def apply_reply_to_contact(
     body_clean = strip_quoted_reply(body_text)
     contact["reply_body_snippet"] = (body_clean or body_text or "")[:2000]
 
-    analyzed = analyze_incoming_reply(
-        contact=contact,
-        from_email=normalize_email(reply_from),
-        subject=reply_subject or "",
-        body_text=body_text,
-        pdf_text=pdf_text,
-        pdf_source=pdf_source,
-        lang=lang,
-        claude_cache=gemini_cache,
-    )
-    reply_status = analyzed.get("reply_status") or reply_status
+    forced_bounce = (reply_status or "").strip().lower() == "bounce"
+    if forced_bounce:
+        analyzed: dict = {}
+    else:
+        analyzed = analyze_incoming_reply(
+            contact=contact,
+            from_email=normalize_email(reply_from),
+            subject=reply_subject or "",
+            body_text=body_text,
+            pdf_text=pdf_text,
+            pdf_source=pdf_source,
+            lang=lang,
+            claude_cache=gemini_cache,
+        )
+        reply_status = analyzed.get("reply_status") or reply_status
     contact["reply_status"] = reply_status
     contact["has_reply"] = has_meaningful_reply(reply_status)
 
@@ -1109,7 +1217,14 @@ def apply_reply_to_contact(
         contact["reply_description"] = (q or body_clean or "")[:500]
     contact["call_needed"] = compute_call_needed(contact, DEFAULT_NO_REPLY_HOURS)
     update_intervention_flags(contact, reply_status, body_clean or body_text)
-    suppress_reminders_for_replied_contact(contact)
+    if reply_status == "bounce":
+        suppress_reminders_for_bounced_contact(
+            contact,
+            reply_at=contact.get("reply_at") or "",
+            snippet=contact.get("reply_body_snippet") or "",
+        )
+    else:
+        suppress_reminders_for_replied_contact(contact)
 
 
 def fetch_imap_messages(
@@ -1245,6 +1360,7 @@ def sync_replies_from_messages(
     uids_mark_unread: list[bytes] = []
     our_email = normalize_email(get_gmail_user())
     campaign = config.campaign_id or ""
+    known_targets = set(by_email.keys())
 
     for imap_uid, msg in normalize_imap_items(messages):
         msg_dt = parse_message_date(msg) or datetime.now()
@@ -1255,12 +1371,64 @@ def sync_replies_from_messages(
         if not from_em or from_em == our_email:
             continue
 
+        subject = decode_mime_header(msg.get("Subject"))
+        body = get_message_body(msg)
+
+        if is_bounce_notification(from_em, subject, body):
+            recipients = extract_bounce_recipients(
+                f"{subject}\n{body}", known_targets=known_targets
+            )
+            for recip in recipients:
+                place_urls = resolve_place_urls(
+                    recip, by_email, by_domain, cache
+                )
+                if not place_urls:
+                    continue
+                place_url = pick_best_place_url_for_reply(cache, place_urls, msg_dt)
+                if not place_url:
+                    continue
+                contact = contacts.setdefault(place_url, {})
+                sent_raw = contact.get("email_sent_at")
+                if sent_raw:
+                    try:
+                        sent_at = datetime.fromisoformat(sent_raw.replace("Z", ""))
+                        if msg_dt < sent_at - timedelta(minutes=5):
+                            continue
+                    except ValueError:
+                        pass
+                if contact_is_bounced(contact):
+                    continue
+                apply_reply_to_contact(
+                    contact,
+                    reply_at=msg_dt,
+                    reply_from=from_em,
+                    reply_subject=subject,
+                    reply_status="bounce",
+                    body_text=body,
+                    pdf_text="",
+                    pdf_source="",
+                    lang=config.lang,
+                    gemini_cache=claude_cache,
+                    matched_by="bounce",
+                )
+                company = (
+                    contact.get("company_name_clean")
+                    or contact.get("company_name")
+                    or recip
+                )
+                logger.info(
+                    "Bounce dla %s → %s — temat: %s",
+                    recip,
+                    company,
+                    (subject or "")[:50],
+                )
+                updated += 1
+            continue
+
         place_urls = resolve_place_urls(from_em, by_email, by_domain, cache)
         if not place_urls:
             continue
 
-        subject = decode_mime_header(msg.get("Subject"))
-        body = get_message_body(msg)
         pdf_text = ""
         pdf_source = ""
         for fname, payload in iter_pdf_attachments(msg):
@@ -1598,7 +1766,10 @@ def get_pending_reminder_number(
 
     if contact.get("reminders_suppressed"):
         return None
-    if str(contact.get("email_status") or "").strip().lower() == "replied":
+    status = str(contact.get("email_status") or "").strip().lower()
+    if status in ("replied", "bounced"):
+        return None
+    if contact_is_bounced(contact):
         return None
 
     if contact_has_any_reply(contact):
@@ -2110,6 +2281,39 @@ def _latest_inbound_from_target(
     return best_dt, best_msg
 
 
+def _latest_bounce_for_target(
+    contact: dict,
+    messages: list,
+) -> tuple[datetime, email.message.Message] | None:
+    """Najnowszy DSN (mailer-daemon) wskazujący na email_target kontaktu."""
+    target = normalize_email(contact.get("email_target") or "")
+    if not target:
+        return None
+    sent_at = _parse_sent_at(contact)
+    if not sent_at:
+        return None
+    best_dt: datetime | None = None
+    best_msg: email.message.Message | None = None
+    for _uid, msg in normalize_imap_items(messages):
+        from_em = normalize_email(decode_mime_header(msg.get("From")))
+        subject = decode_mime_header(msg.get("Subject"))
+        body = get_message_body(msg)
+        if not is_bounce_notification(from_em, subject, body):
+            continue
+        recipients = extract_bounce_recipients(f"{subject}\n{body}")
+        if target not in recipients:
+            continue
+        msg_dt = parse_message_date(msg) or datetime.now()
+        if msg_dt < sent_at - timedelta(minutes=5):
+            continue
+        if best_dt is None or msg_dt > best_dt:
+            best_dt = msg_dt
+            best_msg = msg
+    if best_dt is None or best_msg is None:
+        return None
+    return best_dt, best_msg
+
+
 def verify_contact_reply_from_imap(
     contact: dict,
     config: ReplySyncConfig,
@@ -2118,9 +2322,11 @@ def verify_contact_reply_from_imap(
     *,
     cache: dict | None = None,
 ) -> bool:
-    """Sprawdza skrzynkę dla tego samego adresata (email_target). Zwraca True jeśli jest odpowiedź."""
+    """Sprawdza skrzynkę dla tego samego adresata (email_target). Zwraca True jeśli jest odpowiedź lub bounce."""
     our_email = normalize_email(get_gmail_user())
-    found = _latest_inbound_from_target(contact, messages, our_email)
+    found = _latest_bounce_for_target(contact, messages)
+    if not found:
+        found = _latest_inbound_from_target(contact, messages, our_email)
     if not found:
         return contact_has_any_reply(contact)
     msg_dt, msg = found
@@ -2183,6 +2389,8 @@ def verify_sent_contacts_from_imap(
         if status not in ("sent", "reminder_sent"):
             continue
         if not (info.get("email_target") or "").strip():
+            continue
+        if contact_is_bounced(info):
             continue
         had = contact_has_any_reply(info)
         verify_contact_reply_from_imap(info, config, messages, logger, cache=cache)
