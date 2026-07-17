@@ -287,7 +287,8 @@ def main() -> int:
             continue
 
         subject, body = build_reminder_email_for_preset(
-            contact, preset, reminder_number=rem_num
+            contact, preset, reminder_number=rem_num,
+            logger=logger, cache=cache, place_url=place_url,
         )
         ok, info = send_email_gmail(
             target,

@@ -57,6 +57,8 @@ ENV_IMAP_SSL = "IMAP_SSL"
 ENV_MAIL_BCC = "MAIL_BCC"
 ENV_MAIL_CC = "MAIL_CC"
 ENV_MAIL_ARCHIVE_IMAP = "MAIL_ARCHIVE_IMAP"
+# Osobny folder IMAP na kopie wysłanych (np. etykieta Gmail „wyslane”); domyślnie: wyslane
+ENV_MAIL_IMAP_ARCHIVE_FOLDER = "MAIL_IMAP_ARCHIVE_FOLDER"
 # Kompatybilność wsteczna (Gmail lub stare instalacje)
 ENV_GMAIL_USER = "GMAIL_USER"
 ENV_GMAIL_APP_PASSWORD = "GMAIL_APP_PASSWORD"

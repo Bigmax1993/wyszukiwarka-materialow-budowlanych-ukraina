@@ -1844,10 +1844,29 @@ def format_quoted_previous_email(
         if from_line:
             header += f"Od: {from_line}\n"
 
-    quoted = "\n".join(
-        f"> {line}" if line.strip() else ">" for line in original_body.splitlines()
+    quoted_body = original_body.strip()
+    return f"{header}\n{quoted_body}"
+
+
+def _static_reminder_intro_uk(
+    sent_date: str, *, reminder_number: int = 1
+) -> str:
+    date_bit = f" від {sent_date}" if sent_date else ""
+    if reminder_number >= 2:
+        return (
+            "Доброго дня,\n\n"
+            f"Пишу щодо нашого запиту{date_bit} — "
+            "на жаль, відповіді ще не отримали. "
+            "Чи могли б Ви повернутися з короткою інформацією або орієнтовною ціною?\n\n"
+            "Буду вдячний за будь-який зворотний зв'язок."
+        )
+    return (
+        "Доброго дня,\n\n"
+        f"Хотів би делікатно повернутися до нашого листа{date_bit} "
+        "щодо будматеріалів. Можливо, він загубився серед інших запитів.\n\n"
+        "Якщо є можливість, прошу коротко відповісти або надіслати прайс. "
+        "Заздалегідь дякую."
     )
-    return f"{header}\n{quoted}"
 
 
 def normalize_signature_for_uk(signature: str) -> str:
@@ -1863,7 +1882,13 @@ def normalize_signature_for_uk(signature: str) -> str:
 
 
 def build_reminder_email(
-    contact: dict, lang: str, *, reminder_number: int = 1
+    contact: dict,
+    lang: str,
+    *,
+    reminder_number: int = 1,
+    logger: logging.Logger | None = None,
+    cache: dict | None = None,
+    place_url: str = "",
 ) -> tuple[str, str]:
     company = (
         contact.get("company_name_clean")
@@ -1887,53 +1912,57 @@ def build_reminder_email(
 
     subject = _reply_subject(orig_subj, lang, company)
 
-    if reminder_number >= 2:
-        if lang == "de":
+    intro = ""
+    if lang == "uk":
+        try:
+            from ua_claude_reminder_email import claude_generate_reminder_intro_uk
+
+            intro = claude_generate_reminder_intro_uk(
+                contact,
+                logger,
+                cache,
+                reminder_number=reminder_number,
+                cache_key=place_url or str(contact.get("email_target") or ""),
+            ) or ""
+        except Exception:
+            intro = ""
+    if not intro:
+        if reminder_number >= 2:
+            if lang == "de":
+                intro = (
+                    f"Guten Tag,\n\n"
+                    f"ich möchte unsere Anfrage"
+                    f"{f' vom {sent_date}' if sent_date else ''} "
+                    f"noch einmal kurz ansprechen — bisher haben wir leider keine "
+                    f"Rückmeldung erhalten. Wären Sie so freundlich, uns zeitnah zu antworten?"
+                )
+            elif lang == "uk":
+                intro = _static_reminder_intro_uk(sent_date, reminder_number=2)
+            else:
+                intro = (
+                    f"Dzień dobry,\n\n"
+                    f"ponownie przypominam o naszym zapytaniu ofertowym"
+                    f"{f' z dnia {sent_date}' if sent_date else ''} — "
+                    f"niestety nie otrzymaliśmy jeszcze odpowiedzi. "
+                    f"Będę wdzięczny za krótką informację lub wycenę."
+                )
+        elif lang == "de":
             intro = (
                 f"Guten Tag,\n\n"
-                f"ich möchte unsere Anfrage"
+                f"ich erlaube mir, unsere Anfrage"
                 f"{f' vom {sent_date}' if sent_date else ''} "
-                f"noch einmal kurz ansprechen — bisher haben wir leider keine "
-                f"Rückmeldung erhalten. Wären Sie so freundlich, uns zeitnah zu antworten?"
+                f"freundlich in Erinnerung zu rufen. Könnten Sie uns bitte kurz "
+                f"rückmelden oder ein unverbindliches Angebot zusenden?"
             )
         elif lang == "uk":
-            intro = (
-                f"Доброго дня,\n\n"
-                f"повторно звертаюся щодо нашого запиту"
-                f"{f' від {sent_date}' if sent_date else ''} — "
-                f"на жаль, відповіді ще не отримали. "
-                f"Чи могли б Ви відповісти найближчим часом?"
-            )
+            intro = _static_reminder_intro_uk(sent_date, reminder_number=1)
         else:
             intro = (
                 f"Dzień dobry,\n\n"
-                f"ponownie przypominam o naszym zapytaniu ofertowym"
-                f"{f' z dnia {sent_date}' if sent_date else ''} — "
-                f"niestety nie otrzymaliśmy jeszcze odpowiedzi. "
-                f"Będę wdzięczny za krótką informację lub wycenę."
+                f"uprzejmie przypominam o naszym zapytaniu ofertowym"
+                f"{f' z dnia {sent_date}' if sent_date else ''}. "
+                f"Będę wdzięczny za krótką informację zwrotną lub wycenę."
             )
-    elif lang == "de":
-        intro = (
-            f"Guten Tag,\n\n"
-            f"ich erlaube mir, unsere Anfrage"
-            f"{f' vom {sent_date}' if sent_date else ''} "
-            f"freundlich in Erinnerung zu rufen. Könnten Sie uns bitte kurz "
-            f"rückmelden oder ein unverbindliches Angebot zusenden?"
-        )
-    elif lang == "uk":
-        intro = (
-            f"Доброго дня,\n\n"
-            f"нагадую про наш запит щодо комерційної пропозиції"
-            f"{f' від {sent_date}' if sent_date else ''}. "
-            f"Буду вдячний за коротку відповідь або орієнтовну ціну."
-        )
-    else:
-        intro = (
-            f"Dzień dobry,\n\n"
-            f"uprzejmie przypominam o naszym zapytaniu ofertowym"
-            f"{f' z dnia {sent_date}' if sent_date else ''}. "
-            f"Będę wdzięczny za krótką informację zwrotną lub wycenę."
-        )
 
     quoted = format_quoted_previous_email(orig_body, orig_subj, sent_raw, lang)
     parts = [intro, signature]
@@ -2033,13 +2062,23 @@ def build_reminder_email_for_preset(
     preset: dict,
     *,
     reminder_number: int = 1,
+    logger: logging.Logger | None = None,
+    cache: dict | None = None,
+    place_url: str = "",
 ) -> tuple[str, str]:
     lang = str(preset.get("lang") or "pl").strip().lower()
     if preset.get("bilingual_reminder_de_fr"):
         return _build_bilingual_reminder_email_de_fr(
             contact, reminder_number=reminder_number
         )
-    return build_reminder_email(contact, lang, reminder_number=reminder_number)
+    return build_reminder_email(
+        contact,
+        lang,
+        reminder_number=reminder_number,
+        logger=logger,
+        cache=cache,
+        place_url=place_url,
+    )
 
 
 def _latest_inbound_from_target(

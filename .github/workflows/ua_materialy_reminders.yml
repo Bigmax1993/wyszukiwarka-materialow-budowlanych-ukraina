@@ -31,8 +31,12 @@ env:
   DISABLE_SEND_WINDOW: "1"
   KANBUD_PROJECT_ROOT: ${{ github.workspace }}/libs
   MAIL_ARCHIVE_IMAP: "1"
+  MAIL_IMAP_ARCHIVE_FOLDER: wyslane
   USE_CLAUDE_REPLY_INTELLIGENCE: "1"
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID_UA }}
+  GDRIVE_VERSION_XLSX: "0"
+  GDRIVE_APPEND_XLSX: "1"
   UA_REGIONAL_INQUIRY_EMAIL_FROM: "2026-07-13"
 
 jobs:
@@ -93,6 +97,23 @@ jobs:
             ARGS="$ARGS --send"
           fi
           python ua_sync_replies_and_reminders.py $ARGS
+
+      - name: Install Google Drive dependencies
+        if: always()
+        run: pip install -r requirements-drive.txt
+
+      - name: Upload Wyniki + wyslane to Google Drive
+        if: always()
+        env:
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_OAUTH_CLIENT_ID: ${{ secrets.GDRIVE_OAUTH_CLIENT_ID }}
+          GDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.GDRIVE_OAUTH_CLIENT_SECRET }}
+          GDRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GDRIVE_OAUTH_REFRESH_TOKEN }}
+          GDRIVE_IMPERSONATE_EMAIL: ${{ secrets.GDRIVE_IMPERSONATE_EMAIL }}
+          GDRIVE_SHARED_DRIVE_ID: ${{ secrets.GDRIVE_SHARED_DRIVE_ID }}
+        run: |
+          mkdir -p Wyniki wyslane 2>/dev/null || true
+          python scripts/gdrive_upload_wyniki.py --campaign-dir . --campaign ua
 
       - name: Upload Wyniki artifact
         if: always()

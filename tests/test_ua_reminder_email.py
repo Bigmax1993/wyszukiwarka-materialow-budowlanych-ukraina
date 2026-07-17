@@ -40,7 +40,7 @@ class TestUaReminderEmail(unittest.TestCase):
         subject, body = build_reminder_email(contact, "uk", reminder_number=1)
         self.assertIn("Re:", subject)
         self.assertIn("Доброго дня", body)
-        self.assertIn("нагадую", body.lower())
+        self.assertIn("запит", body.lower())
         self.assertIn("Свінчак", body)
         self.assertIn("Попереднє повідомлення", body)
 
@@ -56,7 +56,7 @@ class TestUaReminderEmail(unittest.TestCase):
             "email_target": "a@b.ua",
         }
         _subject, body = build_reminder_email(contact, "uk", reminder_number=2)
-        self.assertIn("повторно", body.lower())
+        self.assertIn("відповід", body.lower())
 
     def test_reply_status_label_uk(self):
         self.assertEqual(reply_status_label("replied_with_price", "uk"), "Пропозиція")

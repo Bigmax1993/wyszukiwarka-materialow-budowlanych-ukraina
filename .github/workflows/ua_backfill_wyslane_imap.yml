@@ -1,0 +1,83 @@
+name: UA backfill wyslane IMAP
+
+# Jednorazowo / ręcznie: dopisz kopie .eml z artefaktu do etykiety Gmail „wyslane”.
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: Artefakt z folderem wyslane/ (domyślnie reminders)
+        required: false
+        type: string
+        default: "ua-materialy-wyniki-reminders"
+      dry_run:
+        description: Tylko podgląd (bez IMAP APPEND)
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  SCRAPER_TIMEZONE: Europe/Warsaw
+  KANBUD_PROJECT_ROOT: ${{ github.workspace }}/libs
+  MAIL_ARCHIVE_IMAP: "1"
+  MAIL_IMAP_ARCHIVE_FOLDER: wyslane
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-scraper
+
+      - name: Resolve artifact run
+        id: artifact_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          resolve_run_id() {
+            local artifact_name="$1"
+            gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+              --jq "[.artifacts[] | select(.name==\"${artifact_name}\" and .expired==false)] | sort_by(.created_at) | reverse | .[0].workflow_run.id // empty"
+          }
+          PREFERRED="${{ inputs.artifact_name }}"
+          RUN_ID=$(resolve_run_id "$PREFERRED")
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            for NAME in ua-materialy-wyniki-reminders ua-materialy-wyniki-tue ua-materialy-wyniki-mon ua-materialy-wyniki-fri; do
+              RUN_ID=$(resolve_run_id "$NAME")
+              if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+                PREFERRED="$NAME"
+                break
+              fi
+            done
+          fi
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "::error::Brak artefaktu z folderem wyslane/"
+            exit 1
+          fi
+          echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "artifact=$PREFERRED" >> "$GITHUB_OUTPUT"
+
+      - name: Download wyslane artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.artifact_run.outputs.artifact }}
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.artifact_run.outputs.run-id }}
+          path: .
+
+      - name: Backfill wyslane → Gmail IMAP
+        env:
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="--dry-run"
+          fi
+          echo "Pliki .eml:"
+          find wyslane -name '*.eml' 2>/dev/null | sort || true
+          python scripts/backfill_wyslane_imap.py $ARGS -v
