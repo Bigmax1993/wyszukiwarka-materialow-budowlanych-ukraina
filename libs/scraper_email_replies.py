@@ -1722,6 +1722,8 @@ def get_ua_pending_reminder_number(
     if contact_has_any_reply(contact) or had_reply_within_days_of_sent(contact, min_days):
         suppress_reminders_for_replied_contact(contact)
         return None
+    if materialy_reminder_already_sent(contact):
+        return None
 
     return get_pending_reminder_number(
         contact,
@@ -1825,8 +1827,26 @@ def needs_reminder(
     return pending is not None
 
 
+def materialy_reminder_already_sent(contact: dict) -> bool:
+    """True gdy przypomnienie materiały PL/UA zostało już wysłane (ochrona przed duplikatem)."""
+    if contact.get("reminder_sent_at") or contact.get("reminder_2_sent_at"):
+        return True
+    status = str(contact.get("email_status") or "").strip().lower()
+    if status == "reminder_sent":
+        return True
+    try:
+        raw = contact.get("reminder_count")
+        if raw is not None and int(raw) >= UA_MAX_REMINDERS_PER_CONTACT:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return False
+
+
 def ua_needs_reminder(contact: dict, min_days: float | None = None) -> bool:
     """UA: jedno przypomnienie po min_days od pierwszego maila, bez odpowiedzi w tym oknie."""
+    if materialy_reminder_already_sent(contact):
+        return False
     return get_ua_pending_reminder_number(contact, min_days=min_days) is not None
 
 

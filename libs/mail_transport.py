@@ -460,10 +460,16 @@ def _append_to_imap_sent(
     )
 
 
-def _should_append_imap_archive() -> bool:
+def _should_append_imap_archive(username: str) -> bool:
     if not _truthy(get_env_value(ENV_MAIL_ARCHIVE_IMAP) or "1"):
         return False
-    return bool(get_imap_archive_folder())
+    if not get_imap_archive_folder():
+        return False
+    # Gmail: SMTP zapisuje w Wysłanych; IMAP APPEND do „wyslane” daje drugą kopię w wątku
+    # (inna Message-ID i często inny nagłówek From niż yagmail).
+    if _is_gmail_address(username):
+        return False
+    return True
 
 
 def _append_to_imap_archive(
@@ -541,8 +547,13 @@ def archive_sent_message(
         logger.info(
             "Gmail: pominięto IMAP APPEND do Wysłane (SMTP już zapisuje w skrzynce)."
         )
-    if password and _should_append_imap_archive():
+    if password and _should_append_imap_archive(username):
         _append_to_imap_archive(username, password, msg, logger)
+    elif password and _is_gmail_address(username) and get_imap_archive_folder():
+        logger.info(
+            "Gmail: pominięto IMAP APPEND do %s (unikamy duplikatu w Wysłanych; kopia lokalna .eml).",
+            get_imap_archive_folder(),
+        )
 
 
 def archive_sent_email_message(
@@ -580,8 +591,13 @@ def archive_sent_email_message(
         logger.info(
             "Gmail: pominięto IMAP APPEND do Wysłane (SMTP już zapisuje w skrzynce)."
         )
-    if _should_append_imap_archive():
+    if _should_append_imap_archive(username):
         _append_to_imap_archive(username, password, msg, logger)
+    elif _is_gmail_address(username) and get_imap_archive_folder():
+        logger.info(
+            "Gmail: pominięto IMAP APPEND do %s (unikamy duplikatu w Wysłanych; kopia lokalna .eml).",
+            get_imap_archive_folder(),
+        )
 
 
 def _yagmail_smtp() -> Any:

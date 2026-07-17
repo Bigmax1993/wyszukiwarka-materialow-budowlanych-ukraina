@@ -46,6 +46,7 @@ from scraper_email_replies import (  # noqa: E402
     iter_ua_reminder_candidates,
     load_cache,
     mark_reminder_sent,
+    materialy_reminder_already_sent,
     preset_to_config,
     save_cache,
     send_email_gmail,
@@ -253,6 +254,9 @@ def main() -> int:
             or contact.get("company_name")
             or "?"
         )
+        if materialy_reminder_already_sent(contact):
+            logger.info("  pominięto %s — przypomnienie już wysłane", target)
+            continue
         rem_num = get_ua_pending_reminder_number(contact, min_days=args.min_days)
         if not rem_num:
             continue
