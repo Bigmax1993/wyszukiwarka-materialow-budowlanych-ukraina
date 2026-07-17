@@ -12,8 +12,15 @@ Ustawienie na stałe (PowerShell):
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
+
+CANONICAL_PL_SENDER_NAME = "Maksym Swinczak"
+_LEGACY_PL_SENDER_NAME_RE = re.compile(
+    r"maksym\s+[\s,]*(?:świ[nń]czak|swi[nń]czak|świnczak)",
+    re.IGNORECASE,
+)
 
 _DOTENV_LOADED = False
 
@@ -149,8 +156,24 @@ def get_mail_password() -> str:
     return get_env_value(ENV_MAIL_PASSWORD) or get_env_value(ENV_GMAIL_APP_PASSWORD)
 
 
+def normalize_mail_sender_name(name: str) -> str:
+    """Ujednolica pisownię nadawcy PL: zawsze „Maksym Swinczak” (bez polskich znaków)."""
+    text = " ".join((name or "").replace("\n", " ").split()).strip()
+    if not text:
+        return text
+    return _LEGACY_PL_SENDER_NAME_RE.sub(CANONICAL_PL_SENDER_NAME, text)
+
+
+def normalize_sender_name_in_text(text: str) -> str:
+    """Zamienia stare warianty nazwiska w dowolnym tekście (np. cytat wątku)."""
+    if not text:
+        return text
+    return _LEGACY_PL_SENDER_NAME_RE.sub(CANONICAL_PL_SENDER_NAME, text)
+
+
 def get_mail_sender_name() -> str:
-    return get_env_value(ENV_MAIL_SENDER_NAME) or get_env_value(ENV_GMAIL_SENDER_NAME)
+    raw = get_env_value(ENV_MAIL_SENDER_NAME) or get_env_value(ENV_GMAIL_SENDER_NAME)
+    return normalize_mail_sender_name(raw)
 
 
 def get_gmail_user() -> str:

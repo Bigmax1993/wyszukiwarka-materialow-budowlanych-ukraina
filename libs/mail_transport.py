@@ -674,6 +674,9 @@ def send_smtp_email(
             kwargs["cc"] = cc_list
         if attach_files:
             kwargs["attachments"] = attach_files
+        sender_name = _sanitize_sender_name(get_mail_sender_name())
+        if sender_name:
+            kwargs["headers"] = {"From": f"{sender_name} <{username}>"}
         yag.send(**kwargs)
         archive_sent_message(
             to_email,

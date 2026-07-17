@@ -33,6 +33,7 @@ from scraper_env import (
     get_env_value,
     get_gmail_app_password,
     get_gmail_user,
+    get_mail_sender_name,
 )
 from mail_transport import get_imap_host, send_smtp_email
 
@@ -1654,7 +1655,7 @@ def send_email_gmail(
     mail_type: str = "wiadomość",
     campaign: str = "",
 ) -> tuple[bool, str]:
-    sender_name = sanitize_sender_name(get_env_value(ENV_GMAIL_SENDER_NAME))
+    sender_name = sanitize_sender_name(get_mail_sender_name())
     if sender_name and not get_env_value("MAIL_SENDER_NAME"):
         try:
             import os
@@ -1982,14 +1983,12 @@ def normalize_signature_for_pl(signature: str) -> str:
 def _reminder_from_line(lang: str) -> str:
     sender = get_gmail_user() or get_env_value(ENV_GMAIL_USER) or ""
     if lang == "de":
-        sender_name = sanitize_sender_name(get_env_value(ENV_GMAIL_SENDER_NAME))
+        sender_name = sanitize_sender_name(get_mail_sender_name())
         if sender_name and sender:
             return f"{sender_name} <{sender}>"
         return sender or sender_name or ""
     if lang == "uk":
-        sender_name = sanitize_sender_name(
-            get_env_value(ENV_GMAIL_SENDER_NAME) or get_env_value("MAIL_SENDER_NAME")
-        )
+        sender_name = sanitize_sender_name(get_mail_sender_name())
         if not sender_name:
             sender_name = "Свінчак Максим"
         if sender:
