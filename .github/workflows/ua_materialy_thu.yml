@@ -72,6 +72,42 @@ jobs:
           python ua_materialy_scraper.py $CFG --backfill-emails-from-cache
           python ua_materialy_scraper.py $CFG --rebuild-from-cache
 
+      - name: Install Google Drive dependencies
+        run: pip install -r requirements-drive.txt
+
+      - name: Upload Excel to Google Drive
+        continue-on-error: true
+        env:
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID_UA }}
+          GDRIVE_VERSION_XLSX: "0"
+          GDRIVE_APPEND_XLSX: "1"
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_OAUTH_CLIENT_ID: ${{ secrets.GDRIVE_OAUTH_CLIENT_ID }}
+          GDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.GDRIVE_OAUTH_CLIENT_SECRET }}
+          GDRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GDRIVE_OAUTH_REFRESH_TOKEN }}
+          GDRIVE_IMPERSONATE_EMAIL: ${{ secrets.GDRIVE_IMPERSONATE_EMAIL }}
+          GDRIVE_SHARED_DRIVE_ID: ${{ secrets.GDRIVE_SHARED_DRIVE_ID }}
+        run: |
+          python scripts/gdrive_upload_wyniki.py --campaign-dir . --campaign ua
+
+      - name: Verify Excel vs JSON and fill missing fields
+        run: |
+          python scripts/verify_excel_from_json.py --campaign ua --wyniki Wyniki
+
+      - name: Re-upload filled Excel to Google Drive
+        env:
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID_UA }}
+          GDRIVE_VERSION_XLSX: "0"
+          GDRIVE_APPEND_XLSX: "0"
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_OAUTH_CLIENT_ID: ${{ secrets.GDRIVE_OAUTH_CLIENT_ID }}
+          GDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.GDRIVE_OAUTH_CLIENT_SECRET }}
+          GDRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GDRIVE_OAUTH_REFRESH_TOKEN }}
+          GDRIVE_IMPERSONATE_EMAIL: ${{ secrets.GDRIVE_IMPERSONATE_EMAIL }}
+          GDRIVE_SHARED_DRIVE_ID: ${{ secrets.GDRIVE_SHARED_DRIVE_ID }}
+        run: |
+          python scripts/gdrive_upload_wyniki.py --campaign-dir . --campaign ua
+
       - name: Upload Wyniki artifact
         if: always()
         uses: actions/upload-artifact@v4

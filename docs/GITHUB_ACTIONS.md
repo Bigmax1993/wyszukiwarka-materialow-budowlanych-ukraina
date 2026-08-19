@@ -13,7 +13,7 @@ Kampania PL (osobne repo): [wyszukiwarka-materialow-budowlanych-polska](https://
 | **Tests** | `tests.yml` | push, PR | smoke UA + pytest + `test_repo_isolation` |
 | **CI Deploy** | `ci-deploy.yml` | push | smoke UA + secrets + dry-run maili |
 | **UA discovery** | `ua_materialy_pi.yml` | cron, ręcznie | Discovery pon–pt → `ua-materialy-wyniki-pi` |
-| **UA niedziela backfill** | `ua_materialy_thu.yml` | cron, ręcznie | Backfill + Excel → `ua-materialy-wyniki-thu` |
+| **UA niedziela backfill** | `ua_materialy_thu.yml` | cron, ręcznie | Backfill + Excel → Drive → walidacja JSON → `ua-materialy-wyniki-thu` |
 | **UA poniedzialek prep** | `ua_materialy_mon.yml` | cron, ręcznie | Rebuild Excel → `ua-materialy-wyniki-mon` |
 | **UA poniedzialek send** | `ua_materialy_tue.yml` | cron, ręcznie | Wysyłka partia 1 (300) → `ua-materialy-wyniki-tue` |
 | **UA wtorek send** | `ua_materialy_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `ua-materialy-wyniki-fri` |
