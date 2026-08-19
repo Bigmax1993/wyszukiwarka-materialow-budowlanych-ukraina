@@ -420,5 +420,77 @@ class DiscoveryQualityGateRegression(unittest.TestCase):
         self.assertIn("retail_verified", str(ctx.exception))
 
 
+class JsonToExcelCacheRowTests(unittest.TestCase):
+    def test_cache_row_uses_emails_found_and_oblast(self):
+        row = scraper.row_from_cache_contact(
+            "https://cement.ua",
+            {
+                "company_name_clean": "Cement UA",
+                "emails_found": "biuro@cement.ua",
+                "phones_found": "38050111222",
+                "discovery_bundesland": "Lvivska",
+                "full_address": "Lviv, Shevchenka 10",
+            },
+        )
+        self.assertIsNotNone(row)
+        self.assertEqual(row["email_target"], "biuro@cement.ua")
+        self.assertEqual(row["bundesland"], "Lvivska")
+        self.assertEqual(row["telefon"], "38050111222")
+
+    def test_needed_json_data_passes_even_if_not_strict_eligible(self):
+        row = scraper.row_from_cache_contact(
+            "https://hurt.ua",
+            {
+                "company_name_clean": "Hurtownia Budmat",
+                "phones_found": "38050111222",
+                "retail_verified": False,
+                "is_gu": False,
+            },
+        )
+        self.assertIsNotNone(row)
+        self.assertEqual(row["telefon"], "38050111222")
+
+    def test_save_excel_fills_missing_json_fields_and_rewrites(self):
+        logger = logging.getLogger("test_excel_json")
+        cache = {
+            "contacts": {
+                "https://alpha.ua": {
+                    "company_name_clean": "Alpha Bud",
+                    "email_target": "a@alpha.ua",
+                    "phones_found": "38050100200",
+                    "bundesland": "Kyiv",
+                    "official_website": "https://alpha.ua",
+                    "full_address": "Kyiv, 1",
+                }
+            }
+        }
+        rows = [
+            {
+                "url": "https://alpha.ua",
+                "nazwa": "Alpha Bud",
+                "email_target": "",
+                "www": "https://alpha.ua",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "ua_materialy_kontakte.xlsx"
+            with patch.object(scraper, "is_row_llm_cleanup_enabled", return_value=False):
+                scraper.save_excel(rows, path, logger, cache=cache)
+            self.assertTrue(path.exists())
+            from scripts.excel_from_json_validate import (
+                find_excel_gaps,
+                load_kontakte_rows,
+                needed_contacts_from_cache,
+            )
+
+            loaded = load_kontakte_rows(path)
+            gaps = find_excel_gaps(needed_contacts_from_cache(cache), loaded)
+            self.assertEqual(gaps, [])
+            by_url = {r.get("URL"): r for r in loaded}
+            self.assertEqual(str(by_url["https://alpha.ua"]["E-mail"]), "a@alpha.ua")
+            self.assertEqual(str(by_url["https://alpha.ua"]["Telefon"]), "38050100200")
+            self.assertEqual(str(by_url["https://alpha.ua"]["Obwód"]), "Kyiv")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

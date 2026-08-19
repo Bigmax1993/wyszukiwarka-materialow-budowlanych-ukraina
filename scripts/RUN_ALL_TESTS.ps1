@@ -43,7 +43,7 @@ Test-Step "py_compile (aktywne moduly, bez legacy/)" {
 Test-Step "smoke --test (UA materialy)" { python ua_materialy_scraper.py --test }
 
 Test-Step "regresja UA materialy" {
-    python -m unittest tests.test_ua_materialy_regression -v
+    python -m unittest tests.test_ua_materialy_regression tests.test_excel_from_json_validate -v
 }
 
 Test-Step "pytest UA (jednostkowe + integracyjne)" {

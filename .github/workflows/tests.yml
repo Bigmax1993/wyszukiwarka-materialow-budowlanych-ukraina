@@ -32,13 +32,15 @@ jobs:
           python -m py_compile ua_oblast_keywords.py
           python -m py_compile ua_sync_replies_and_reminders.py
           python -m py_compile libs/email_reply_intelligence.py
+          python -m py_compile scripts/excel_from_json_validate.py
+          python -m py_compile scripts/rebuild_excel_from_all_artifacts.py
 
       - name: Scraper smoke UA materialy (--test)
         run: python ua_materialy_scraper.py --test
 
       - name: Regresja i testy UA (pytest + unittest)
         run: |
-          python -m unittest tests.test_ua_materialy_regression -v
+          python -m unittest tests.test_ua_materialy_regression tests.test_excel_from_json_validate -v
           python -m pytest \
             tests/test_ua_oblast_keywords.py \
             tests/test_ua_inquiry_email_uk.py \

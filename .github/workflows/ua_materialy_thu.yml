@@ -71,6 +71,7 @@ jobs:
           python ua_materialy_scraper.py $CFG --verify-pending-contacts --reverify-all-contacts
           python ua_materialy_scraper.py $CFG --backfill-emails-from-cache
           python ua_materialy_scraper.py $CFG --rebuild-from-cache
+          python scripts/rebuild_excel_from_all_artifacts.py --src Wyniki --wyniki Wyniki --wyslane wyslane
 
       - name: Upload Wyniki artifact
         if: always()
