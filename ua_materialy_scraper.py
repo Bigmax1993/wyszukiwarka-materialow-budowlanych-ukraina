@@ -771,114 +771,7 @@ def build_excel_info_sheet_rows() -> list[dict]:
     ]
 
 
-def _needed_json_contacts(cache: dict | None) -> dict[str, dict]:
-    from scripts.excel_from_json_validate import needed_contacts_from_cache
-
-    return needed_contacts_from_cache(cache)
-
-
-def _fill_and_verify_excel_from_json(export_rows, cache, logger):
-    from scripts.excel_from_json_validate import (
-        fill_export_from_json,
-        pipeline_row_from_json,
-        verify_and_fill_until_complete,
-    )
-
-    needed = _needed_json_contacts(cache)
-    if not needed:
-        return export_rows, [], 0, []
-    export_rows, n_fill = fill_export_from_json(needed, export_rows)
-    if logger is not None:
-        logger.info("Excel uzupelnienie z JSON: %s zmian", n_fill)
-        console_step(f"JSON → Excel: {n_fill} uzupelnien")
-    export_rows, gaps, rounds = verify_and_fill_until_complete(needed, export_rows)
-    extra_pipeline = [pipeline_row_from_json(url, info) for url, info in needed.items()]
-    if logger is not None:
-        logger.info(
-            "Excel weryfikacja vs JSON: rund=%s luk=%s wierszy=%s",
-            rounds,
-            len(gaps),
-            len(export_rows),
-        )
-        if gaps:
-            logger.warning("Excel nadal ma luki vs JSON: %s", len(gaps))
-        else:
-            console_step(
-                f"Excel kompletny vs JSON ({len(export_rows)} wierszy, rund={rounds})"
-            )
-    return export_rows, gaps, rounds, extra_pipeline
-
-
-def _verify_saved_xlsx_against_json(path, cache, state_rows, cfg, logger) -> None:
-    from scripts.excel_from_json_validate import (
-        fill_export_from_json,
-        load_kontakte_rows,
-        verify_and_fill_until_complete,
-    )
-
-    needed = _needed_json_contacts(cache)
-    path = Path(path)
-    if not needed or not path.exists():
-        return
-    loaded = load_kontakte_rows(path)
-    loaded, gaps, rounds = verify_and_fill_until_complete(needed, loaded)
-    if not gaps:
-        if logger is not None:
-            logger.info(
-                "Weryfikacja zapisanego Excela OK: wierszy=%s rund=%s",
-                len(loaded),
-                rounds,
-            )
-        return
-    if logger is not None:
-        logger.warning(
-            "Po zapisie luki=%s — JSON → walidacja → uzupelnienie → zapis",
-            len(gaps),
-        )
-        console_step(f"Ponowny zapis Excela (luki={len(gaps)})")
-    loaded, _ = fill_export_from_json(needed, loaded)
-    loaded, gaps, _rounds = verify_and_fill_until_complete(needed, loaded)
-    write_excel_with_reply_styles(
-        path,
-        {
-            "Info": build_excel_info_sheet_rows(),
-            "Kontakte": loaded,
-            "Wojewodztwa": state_rows,
-        },
-        cache or {},
-        cfg,
-        logger,
-    )
-    loaded = load_kontakte_rows(path)
-    loaded, gaps, _rounds = verify_and_fill_until_complete(needed, loaded)
-    if gaps:
-        loaded, _ = fill_export_from_json(needed, loaded)
-        loaded, gaps, _rounds = verify_and_fill_until_complete(needed, loaded)
-        write_excel_with_reply_styles(
-            path,
-            {
-                "Info": build_excel_info_sheet_rows(),
-                "Kontakte": loaded,
-                "Wojewodztwa": state_rows,
-            },
-            cache or {},
-            cfg,
-            logger,
-        )
-    if logger is not None:
-        if gaps:
-            logger.warning("Po ponownym zapisie nadal luki=%s", len(gaps))
-            for g in gaps[:15]:
-                logger.warning(
-                    "  %s: %s %s", g.get("url"), g.get("reason"), g.get("columns")
-                )
-        else:
-            logger.info("Weryfikacja zapisanego Excela OK po uzupelnieniu")
-
-
-def save_excel(
-    rows, path: Path, logger: logging.Logger, cache=None, require_eligible=True
-) -> None:
+def save_excel(rows, path: Path, logger: logging.Logger, cache=None) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     try:
         rows_for_excel = rows
@@ -896,16 +789,8 @@ def save_excel(
                 for r in rows
             ]
         export_rows = build_export_rows(
-            rows_for_excel,
-            logger=logger,
-            cache=cache,
-            require_eligible=require_eligible,
+            rows_for_excel, logger=logger, cache=cache
         )
-        export_rows, _gaps, _rounds, extra_pipeline = _fill_and_verify_excel_from_json(
-            export_rows, cache, logger
-        )
-        if extra_pipeline:
-            rows_for_excel = merge_pipeline_rows(list(rows_for_excel), extra_pipeline)
         state_rows = build_bundesland_rows(rows_for_excel)
         if cache is None:
             cache = {}
@@ -927,7 +812,6 @@ def save_excel(
                 cfg,
                 logger,
             )
-            _verify_saved_xlsx_against_json(path, cache, state_rows, cfg, logger)
         except PermissionError:
             alt = path.with_name(f"{path.stem}_export{path.suffix}")
             logger.warning(
@@ -953,7 +837,6 @@ def save_excel(
                 cfg_alt,
                 logger,
             )
-            _verify_saved_xlsx_against_json(alt, cache, state_rows, cfg_alt, logger)
     except ImportError as e:
         logger.error(
             "pandas/openpyxl fehlen. Installieren: pip install pandas openpyxl"
@@ -1595,11 +1478,11 @@ def is_row_eligible_for_excel_export(row: dict) -> bool:
     return False
 
 
-def build_export_rows(rows, logger=None, cache=None, require_eligible=True):
+def build_export_rows(rows, logger=None, cache=None):
     export_rows = []
     for row in rows:
         row = normalize_row_company_name(row)
-        if require_eligible and not is_row_eligible_for_excel_export(row):
+        if not is_row_eligible_for_excel_export(row):
             continue
         email = (row.get("email_target") or "").strip()
         if not email:
@@ -1878,18 +1761,13 @@ def row_from_cache_contact(place_url: str, info: dict) -> dict | None:
     """Jeden rekord contacts JSON → wiersz pipeline (także bez e-mail)."""
     if not isinstance(info, dict):
         return None
-    from scripts.excel_from_json_validate import (
-        first_email_from_contact,
-        json_contact_has_needed_data,
-    )
-
     name = (
         info.get("company_name_clean")
         or info.get("company_name")
         or info.get("company_name_raw")
         or ""
     ).strip()
-    email = first_email_from_contact(info)
+    email = (info.get("email_target") or "").strip()
     row_probe = {
         "url": place_url,
         "www": info.get("official_website") or place_url,
@@ -1910,15 +1788,7 @@ def row_from_cache_contact(place_url: str, info: dict) -> dict | None:
         and not info.get("retail_verified")
     )
     if not pending_www and not is_row_eligible_for_excel_export(row_probe):
-        if not json_contact_has_needed_data(place_url, info):
-            return None
-        text = _row_chain_context_text(row_probe)
-        if is_excluded_kontrahent(name=name, url=place_url, email=email)[0]:
-            return None
-        if is_non_commercial_contact(email=email, url=place_url, name=name):
-            return None
-        if is_retail_store_operator_contact(url=place_url, email=email, text=text):
-            return None
+        return None
     phone = (info.get("phones_found") or "").strip()
     if "," in phone:
         phone = phone.split(",", 1)[0].strip()
@@ -1930,8 +1800,7 @@ def row_from_cache_contact(place_url: str, info: dict) -> dict | None:
             "adres": info.get("full_address") or "",
             "telefon": phone,
             "phones_found": info.get("phones_found") or phone,
-            "bundesland": info.get("bundesland") or info.get("discovery_bundesland") or "",
-            "discovery_bundesland": info.get("discovery_bundesland") or "",
+            "bundesland": info.get("bundesland") or "",
             "email_status": (info.get("email_status") or "").strip(),
             "contact_sources": info.get("contact_sources") or "",
             "is_small_firm": info.get("is_small_firm", True),
@@ -6782,10 +6651,7 @@ if __name__ == "__main__":
             extra_kw["rebuild_from_cache"] = True
             if "discovery_mode" not in extra_kw:
                 extra_kw["discovery_mode"] = "emails_only"
-            print(
-                "[TRYB] Excel i wiersze pipeline z cache JSON "
-                "(walidacja + uzupelnienie brakow + weryfikacja pliku)."
-            )
+            print("[TRYB] Excel i wiersze pipeline z cache JSON (tylko rekordy z E-Mail).")
         if "--purge-institutions" in sys.argv:
             logger = setup_logging()
             cache = load_cache(logger)

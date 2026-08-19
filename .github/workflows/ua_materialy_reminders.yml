@@ -47,11 +47,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-scraper
-        timeout-minutes: 10
-        continue-on-error: true
 
       - name: Resolve artifact run
-        if: ${{ !cancelled() }}
         id: artifact_run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -80,7 +77,6 @@ jobs:
           echo "artifact=$PREFERRED" >> "$GITHUB_OUTPUT"
 
       - name: Download cache
-        if: ${{ !cancelled() && steps.artifact_run.outputs.run-id != '' }}
         uses: actions/download-artifact@v4
         with:
           name: ${{ steps.artifact_run.outputs.artifact }}
@@ -89,7 +85,6 @@ jobs:
           path: .
 
       - name: Sync IMAP + przypomnienia UA
-        if: ${{ !cancelled() && steps.artifact_run.outputs.run-id != '' }}
         env:
           MAIL_USER: ${{ secrets.MAIL_USER }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}

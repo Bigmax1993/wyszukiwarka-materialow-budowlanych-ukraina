@@ -75,7 +75,7 @@ def recover_contacts_from_run_artifact(
             "-R",
             repo,
             "-n",
-            "ua-materialy-wyniki-pi",
+            "de-gu-wyniki-pi",
             "-D",
             str(dest),
         ],
@@ -87,7 +87,7 @@ def recover_contacts_from_run_artifact(
             f"Nie pobrano artefaktu pi z run {run_id}: "
             f"{(proc.stderr or proc.stdout).strip()}"
         )
-    cache_path = dest / "Wyniki" / "ua_materialy_cache.json"
+    cache_path = dest / "Wyniki" / "de_gu_bauunternehmen_cache.json"
     if not cache_path.is_file():
         raise RuntimeError(f"Brak cache w artefakcie run {run_id}")
     return recover_contacts_from_cache_file(cache_path)

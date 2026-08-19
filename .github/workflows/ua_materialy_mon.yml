@@ -57,7 +57,6 @@ jobs:
       - name: Prep (rebuild Excel, bez wysylki)
         run: |
           python ua_materialy_scraper.py --run-config run_config/ua_materialy.json --rebuild-from-cache
-          python scripts/rebuild_excel_from_all_artifacts.py --src Wyniki --wyniki Wyniki --wyslane wyslane
 
       - name: Upload Wyniki artifact
         if: always()

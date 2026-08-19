@@ -25,22 +25,10 @@ runs:
 
     - name: Install Playwright chromium
       shell: bash
-      timeout-minutes: 5
-      continue-on-error: true
       run: |
-        set +e
-        echo "Playwright: limit 5 min — po przekroczeniu idziemy dalej."
         if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
-          timeout --kill-after=15 240 python -m playwright install-deps chromium
-          if [ $? -ne 0 ]; then
-            echo "::warning::playwright install-deps przekroczyl limit lub blad — kontynuuje bez systemowych deps."
-          fi
+          python -m playwright install-deps chromium
           python -m playwright install chromium
         else
-          timeout --kill-after=15 240 python -m playwright install chromium --with-deps
-          if [ $? -ne 0 ]; then
-            echo "::warning::playwright install --with-deps przekroczyl limit — proba bez deps."
-            python -m playwright install chromium
-          fi
+          python -m playwright install chromium --with-deps
         fi
-        exit 0

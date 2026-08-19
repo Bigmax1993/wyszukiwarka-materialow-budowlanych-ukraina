@@ -6,20 +6,19 @@ Kampania PL (osobne repo): [wyszukiwarka-materialow-budowlanych-polska](https://
 
 > **DE GU:** workflowy `de_gu_*.yml` nie istnieją. Kod w `legacy/de_gu/`.
 
-## Workflowy (10)
+## Workflowy (9)
 
 | Workflow | Plik | Trigger | Co robi |
 |----------|------|---------|---------|
 | **Tests** | `tests.yml` | push, PR | smoke UA + pytest + `test_repo_isolation` |
 | **CI Deploy** | `ci-deploy.yml` | push | smoke UA + secrets + dry-run maili |
 | **UA discovery** | `ua_materialy_pi.yml` | cron, ręcznie | Discovery pon–pt → `ua-materialy-wyniki-pi` |
-| **UA niedziela backfill** | `ua_materialy_thu.yml` | cron, ręcznie | Backfill + Excel + weryfikacja JSON → `ua-materialy-wyniki-thu` |
-| **UA poniedzialek prep** | `ua_materialy_mon.yml` | cron, ręcznie | Rebuild Excel + weryfikacja JSON → `ua-materialy-wyniki-mon` |
+| **UA niedziela backfill** | `ua_materialy_thu.yml` | cron, ręcznie | Backfill + Excel → `ua-materialy-wyniki-thu` |
+| **UA poniedzialek prep** | `ua_materialy_mon.yml` | cron, ręcznie | Rebuild Excel → `ua-materialy-wyniki-mon` |
 | **UA poniedzialek send** | `ua_materialy_tue.yml` | cron, ręcznie | Wysyłka partia 1 (300) → `ua-materialy-wyniki-tue` |
 | **UA wtorek send** | `ua_materialy_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `ua-materialy-wyniki-fri` |
 | **UA sync + przypomnienia** | `ua_materialy_reminders.yml` | cron co 3 dni, ręcznie | IMAP + przypomnienia → `ua-materialy-wyniki-reminders` |
 | **Sync wyniki Google Drive UA** | `sync-google-drive-ua.yml` | cron pon 06:00, ręcznie | Upload `Wyniki/` → folder UA |
-| **UA rebuild Excel all artifacts** | `ua_rebuild_excel_all.yml` | ręcznie | Scala wszystkie artefakty → JSON → Excel (pętla walidacji) → Drive |
 
 ## Harmonogram cron (Europe/Warsaw)
 
@@ -67,12 +66,6 @@ Artefakt GHA: `ua-materialy-wyniki-reminders`.
 
 Workflow **UA sync odpowiedzi i przypomnienia**: `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_SENDER_NAME`, `ANTHROPIC_API_KEY`. `IMAP_HOST` opcjonalny (Gmail → `imap.gmail.com` w kodzie).
 
-## Excel vs JSON
-
-Po rebuild (`--rebuild-from-cache` oraz **UA rebuild Excel all artifacts**) plik `ua_materialy_kontakte.xlsx` jest weryfikowany względem `ua_materialy_cache.json`.
-
-Walidacja **przepuszcza** rekord JSON, gdy ma URL oraz nazwę / e-mail / telefon. Puste kolumny i brakujące wiersze są uzupełniane w pętli (max 5 rund), po czym Excel jest zapisywany ponownie. Jeśli po zapisie nadal są luki — znowu JSON → walidacja → uzupełnienie → zapis.
-
 ## Artefakty
 
 ```
@@ -96,7 +89,6 @@ gh workflow run "UA poniedzialek prep" -R Bigmax1993/wyszukiwarka-materialow-bud
 gh workflow run "UA poniedzialek send" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f force_resend=true
 gh workflow run "UA wtorek send" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f force_resend=true
 gh workflow run "UA sync odpowiedzi i przypomnienia" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
-gh workflow run "UA rebuild Excel all artifacts" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
 ```
 
 Pełny łańcuch: `scripts/run_full_pipeline_gha.ps1`
