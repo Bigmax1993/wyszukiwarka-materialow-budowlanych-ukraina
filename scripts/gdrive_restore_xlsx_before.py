@@ -224,7 +224,11 @@ def restore_campaign(campaign: str, cutoff: datetime, *, dry_run: bool) -> int:
         return 0
     creds, use_oauth = _load_credentials()
     service, MediaFileUpload = _drive_service(creds)
-    upload_folder_id = _resolve_upload_folder(service, folder_id, use_oauth=use_oauth)
+    upload_folder = _resolve_upload_folder(service, folder_id, use_oauth=use_oauth)
+    if isinstance(upload_folder, (tuple, list)):
+        upload_folder_id = str(upload_folder[0])
+    else:
+        upload_folder_id = str(upload_folder)
     print(f"=== {campaign} folder={upload_folder_id} cutoff={cutoff.isoformat()} ===")
     files = _list_folder_files(service, upload_folder_id)
     xlsx_files = [f for f in files if _is_kontakte_xlsx(f.get("name") or "")]
