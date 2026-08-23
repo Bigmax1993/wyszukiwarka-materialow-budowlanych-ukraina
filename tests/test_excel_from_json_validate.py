@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -82,6 +84,21 @@ class MergeAndFillLoopTests(unittest.TestCase):
         self.assertEqual(by_url["https://a.pl"]["E-mail"], "a@a.pl")
         self.assertEqual(by_url["https://a.pl"]["Telefon"], "500100200")
         self.assertEqual(by_url["https://b.pl"]["E-mail"], "b@b.pl")
+
+
+class VerifyExcelScriptImportTests(unittest.TestCase):
+    def test_script_starts_without_pythonpath(self):
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        script = ROOT / "scripts" / "verify_excel_from_json.py"
+        result = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":
