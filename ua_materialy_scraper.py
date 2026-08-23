@@ -226,6 +226,7 @@ from email_targeting import (
     AGGREGATOR_EMAIL_DOMAINS,
     MIN_EMAIL_SCORE_FOR_SEND,
     get_registrable_domain,
+    is_public_portal_url,
     is_unsuitable_inquiry_email,
 )
 from ua_email_targeting import (

@@ -44,7 +44,56 @@ AGGREGATOR_EMAIL_DOMAINS = frozenset(
         "obi.pl",
         "leroymerlin.pl",
         "castorama.pl",
+        "olx.ua",
+        "prom.ua",
+        "rozetka.com.ua",
+        "allo.ua",
     }
+)
+
+# Portale ogłoszeniowe / social / katalogi — nie zapisuj do cache JSON ani Excela.
+PUBLIC_PORTAL_DOMAINS_EXACT = frozenset(
+    {
+        "facebook.com",
+        "fb.com",
+        "instagram.com",
+        "linkedin.com",
+        "youtube.com",
+        "youtu.be",
+        "twitter.com",
+        "x.com",
+        "tiktok.com",
+        "pinterest.com",
+        "wikipedia.org",
+        "google.com",
+        "maps.google.com",
+        "olx.ua",
+        "prom.ua",
+        "rozetka.com.ua",
+        "allo.ua",
+        "flagma.ua",
+        "besplatka.ua",
+        "kabanchik.ua",
+        "work.ua",
+        "robota.ua",
+        "youcontrol.com.ua",
+        "ua-region.info",
+        "ria.com",
+    }
+)
+
+PUBLIC_PORTAL_DOMAIN_SUFFIXES = (
+    ".olx.ua",
+    ".prom.ua",
+    ".rozetka.com.ua",
+    ".facebook.com",
+)
+
+PUBLIC_PORTAL_DOMAIN_MARKERS = (
+    "yellowpages.",
+    "firmenabc.",
+    "youcontrol.",
+    "ua-region.",
 )
 
 _UNSUITABLE_LOCAL_MARKERS = (
@@ -99,6 +148,22 @@ def get_registrable_domain(url: str) -> str:
         return netloc
     except Exception:
         return ""
+
+
+def is_public_portal_url(url: str) -> bool:
+    """True = portal ogłoszeń / social / katalog — pomijaj w discovery i cache JSON."""
+    host = get_registrable_domain(url or "")
+    if not host:
+        return False
+    if host in PUBLIC_PORTAL_DOMAINS_EXACT:
+        return True
+    if host in AGGREGATOR_EMAIL_DOMAINS:
+        return True
+    if any(host.endswith(suffix) for suffix in PUBLIC_PORTAL_DOMAIN_SUFFIXES):
+        return True
+    if any(marker in host for marker in PUBLIC_PORTAL_DOMAIN_MARKERS):
+        return True
+    return False
 
 
 def _fold_domain_token(value: str) -> str:
