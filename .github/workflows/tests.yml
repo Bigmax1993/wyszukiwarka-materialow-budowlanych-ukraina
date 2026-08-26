@@ -53,4 +53,5 @@ jobs:
             tests/test_repo_isolation.py \
             tests/test_website_full_crawl.py \
             tests/test_http_page_guard.py \
+            tests/test_ua_excel_pl.py \
             -q

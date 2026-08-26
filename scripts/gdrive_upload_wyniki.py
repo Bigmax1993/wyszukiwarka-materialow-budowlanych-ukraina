@@ -390,6 +390,47 @@ def _upload_file(
     return created["id"]
 
 
+def list_xlsx_in_folder(service, folder_id: str, *, corpora: str = "allDrives") -> list[dict]:
+    q = (
+        f"'{folder_id}' in parents and trashed = false and "
+        f"mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
+    )
+    files: list[dict] = []
+    page_token = None
+    while True:
+        res = (
+            service.files()
+            .list(
+                q=q,
+                fields="nextPageToken, files(id,name,createdTime,modifiedTime)",
+                pageSize=100,
+                pageToken=page_token,
+                corpora=corpora,
+                **_LIST_OPTS,
+            )
+            .execute()
+        )
+        files.extend(res.get("files") or [])
+        page_token = res.get("nextPageToken")
+        if not page_token:
+            break
+    files.sort(key=lambda f: (f.get("createdTime") or "", f.get("name") or ""))
+    return files
+
+
+def download_drive_file(service, file_id: str, dest: Path) -> Path:
+    from googleapiclient.http import MediaIoBaseDownload
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    request = service.files().get_media(fileId=file_id, **_DRIVE_API_OPTS)
+    with dest.open("wb") as fh:
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _status, done = downloader.next_chunk()
+    return dest
+
+
 def upload_files_flat(
     service, MediaFileUpload, local_dir: Path, drive_parent_id: str, *, corpora: str = "allDrives"
 ) -> int:

@@ -18,7 +18,8 @@ Kampania PL (osobne repo): [wyszukiwarka-materialow-budowlanych-polska](https://
 | **UA poniedzialek send** | `ua_materialy_tue.yml` | cron, ręcznie | Wysyłka partia 1 (300) → `ua-materialy-wyniki-tue` |
 | **UA wtorek send** | `ua_materialy_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `ua-materialy-wyniki-fri` |
 | **UA sync + przypomnienia** | `ua_materialy_reminders.yml` | cron co 3 dni, ręcznie | IMAP + przypomnienia → `ua-materialy-wyniki-reminders` |
-| **Sync wyniki Google Drive UA** | `sync-google-drive-ua.yml` | cron pon 06:00, ręcznie | Upload `Wyniki/` → folder UA |
+| **Sync wyniki Google Drive UA** | `sync-google-drive-ua.yml` | cron pon 06:00, ręcznie | Upload `Wyniki/` → folder UA + Excel zbiorczy |
+| **UA merge Excel Drive** | `ua_merge_drive_excel.yml` | ręcznie | Jeden `ua_materialy_zbiorczy.xlsx` z wszystkich Excel na Drive |
 
 ## Harmonogram cron (Europe/Warsaw)
 

@@ -9,7 +9,7 @@ EXCEL_REQUIRED_IF_JSON_HAS = (
     "E-mail",
     "Telefon",
     "Adres",
-    "Województwo",
+    "Obwód",
     "Strona www",
     "URL",
 )
@@ -164,16 +164,16 @@ def excel_row_from_json(place_url: str, info: dict) -> dict:
     return {
         "Nazwa firmy": row["nazwa"],
         "Adres": row["adres"],
-        "Województwo": row["bundesland"],
+        "Obwód": row["bundesland"],
         "Telefon": row["telefon"],
         "E-mail": row["email_target"],
         "Strona www": row["www"],
         "URL": row["url"],
-        "Kategorie_materialow": row["retail_chains_found"],
-        "WWW_geprueft": "ja" if row["retail_verified"] else "nein",
-        "Kleinunternehmen": "ja" if row["is_small_firm"] else "nein",
-        "GU": "ja" if row["is_gu"] else "nein",
-        "GU_Marker": row["gu_marker"],
+        "Kategoria materiałów": row["retail_chains_found"],
+        "WWW sprawdzone": "tak" if row["retail_verified"] else "nie",
+        "Mała firma": "tak" if row["is_small_firm"] else "nie",
+        "Generalny wykonawca": "tak" if row["is_gu"] else "nie",
+        "Znacznik GW": row["gu_marker"],
         "Status": row["email_status"],
     }
 
@@ -197,7 +197,7 @@ def json_field_for_excel_col(info: dict, col: str, place_url: str) -> str:
         )
     if col == "Adres":
         return _s(info.get("full_address"))
-    if col == "Województwo":
+    if col in ("Obwód", "Województwo"):
         return _s(info.get("bundesland")) or _s(info.get("discovery_bundesland"))
     if col == "Telefon":
         return first_phone_from_contact(info)
@@ -207,7 +207,7 @@ def json_field_for_excel_col(info: dict, col: str, place_url: str) -> str:
         return _s(info.get("official_website")) or _s(place_url)
     if col == "URL":
         return _s(place_url) or _s(info.get("official_website"))
-    if col == "Kategorie_materialow":
+    if col in ("Kategoria materiałów", "Kategorie_materialow"):
         return _s(info.get("retail_chains_found"))
     if col == "Status":
         return _s(info.get("email_status"))

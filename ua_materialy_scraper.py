@@ -427,15 +427,15 @@ SUPPRESSED_EMAIL_LOCALPARTS = {
     "postmaster",
 }
 EXPORT_COLUMNS = [
-    "Firmenname",
-    "Adresse",
+    "Nazwa firmy",
+    "Adres",
     "Obwód",
     "Telefon",
-    "E-Mail",
-    "Webseite",
-    "Kategorie_materialow",
-    "WWW_geprueft",
-    "Kleinunternehmen",
+    "E-mail",
+    "Strona www",
+    "Kategoria materiałów",
+    "WWW sprawdzone",
+    "Mała firma",
 ]
 UA_OBLASTS = [
     "Kyiv", "Kyivska", "Lvivska", "Odeska", "Kharkivska", "Dnipropetrovska",
@@ -760,7 +760,7 @@ def build_excel_info_sheet_rows() -> list[dict]:
         },
         {
             "Temat": "Arkusze",
-            "Wartość": "Info (ten arkusz) | Kontakte (firmy) | Wojewodztwa (podsumowanie landów)",
+            "Wartość": "Info (ten arkusz) | Kontakty (firmy) | Obwody (podsumowanie obwodów)",
         },
         {
             "Temat": "Cache JSON",
@@ -805,14 +805,15 @@ def save_excel(
             xlsx_path=path,
             lang="uk",
             campaign_id="ua_materialy",
+            main_sheet_names=("Kontakty", "Kontakte"),
         )
         try:
             write_excel_with_reply_styles(
                 path,
                 {
                     "Info": build_excel_info_sheet_rows(),
-                    "Kontakte": export_rows,
-                    "Wojewodztwa": state_rows,
+                    "Kontakty": export_rows,
+                    "Obwody": state_rows,
                 },
                 cache,
                 cfg,
@@ -831,13 +832,14 @@ def save_excel(
                 xlsx_path=alt,
                 lang="uk",
                 campaign_id="ua_materialy",
+                main_sheet_names=("Kontakty", "Kontakte"),
             )
             write_excel_with_reply_styles(
                 alt,
                 {
                     "Info": build_excel_info_sheet_rows(),
-                    "Kontakte": export_rows,
-                    "Wojewodztwa": state_rows,
+                    "Kontakty": export_rows,
+                    "Obwody": state_rows,
                 },
                 cache,
                 cfg_alt,
@@ -1276,7 +1278,7 @@ def row_to_excel_kontakte_columns(row: dict, email: str = "") -> dict:
         "E-mail": mail,
         "Strona www": website,
         "URL": (row.get("url") or website_base_url(website) or "").strip(),
-        "Kategorie_materialow": (row.get("retail_chains_found") or "").strip(),
+        "Kategoria materiałów": (row.get("retail_chains_found") or "").strip(),
     }
 
 
@@ -1515,10 +1517,10 @@ def build_export_rows(rows, logger=None, cache=None, require_eligible=True):
             table_cols = row_to_excel_kontakte_columns(row, email)
         base = {
             **table_cols,
-            "WWW_geprueft": "ja" if row.get("retail_verified") else "nein",
-            "Kleinunternehmen": "ja" if row.get("is_small_firm") else "nein",
-            "GU": "ja" if row.get("is_gu") or _row_has_gu_signal(row) else "nein",
-            "GU_Marker": (row.get("gu_marker") or "").strip(),
+            "WWW sprawdzone": "tak" if row.get("retail_verified") else "nie",
+            "Mała firma": "tak" if row.get("is_small_firm") else "nie",
+            "Generalny wykonawca": "tak" if row.get("is_gu") or _row_has_gu_signal(row) else "nie",
+            "Znacznik GW": (row.get("gu_marker") or "").strip(),
             "Status": _excel_status_label(row),
         }
         if cache is not None and email:
@@ -1574,13 +1576,18 @@ EXCEL_IMPORT_COLUMNS = {
     "E-mail": "email_target",
     "Strona www": "www",
     "URL": "url",
+    "Znacznik GW": "gu_marker",
     "GU_Marker": "gu_marker",
     "Status": "email_status",
+    "Kategoria materiałów": "retail_chains_found",
 }
 
 
 def row_from_excel_record(rec: dict) -> dict:
-    """Mapuje polskie nagłówki z Excela na pola wewnętrzne scrapera."""
+    """Mapuje polskie (i stare DE) nagłówki z Excela na pola wewnętrzne scrapera."""
+    from ua_excel_pl import normalize_record, polish_flag_value
+
+    rec = normalize_record(rec)
     row: dict = {}
     for col_pl, field in EXCEL_IMPORT_COLUMNS.items():
         for key in (col_pl, field):
@@ -1598,25 +1605,25 @@ def row_from_excel_record(rec: dict) -> dict:
     if row.get("www"):
         row["official_website"] = row["www"]
     apply_domain_company_name_to_row(row)
-    www_checked = str(rec.get("WWW_geprueft") or "").strip().lower()
-    if www_checked == "ja":
+    www_checked = polish_flag_value(rec.get("WWW sprawdzone") or rec.get("WWW_geprueft"))
+    if www_checked == "tak":
         row["retail_verified"] = True
-    elif www_checked == "nein":
+    elif www_checked == "nie":
         row["retail_verified"] = False
         if not (row.get("email_target") or "").strip():
             row["verification_reason"] = PENDING_WWW_VERIFY_REASON
             row["email_status"] = "pending_www_verify"
-    gu_col = str(rec.get("GU") or "").strip().lower()
-    if gu_col == "ja":
+    gu_col = polish_flag_value(rec.get("Generalny wykonawca") or rec.get("GU"))
+    if gu_col == "tak":
         row["is_gu"] = True
-    elif gu_col == "nein":
+    elif gu_col == "nie":
         row["is_gu"] = False
-    small_col = str(rec.get("Kleinunternehmen") or "").strip().lower()
-    if small_col == "ja":
+    small_col = polish_flag_value(rec.get("Mała firma") or rec.get("Kleinunternehmen"))
+    if small_col == "tak":
         row["is_small_firm"] = True
-    elif small_col == "nein":
+    elif small_col == "nie":
         row["is_small_firm"] = False
-    chains = str(rec.get("Kategorie_materialow") or "").strip()
+    chains = str(rec.get("Kategoria materiałów") or rec.get("Kategorie_materialow") or "").strip()
     if chains:
         row["retail_chains_found"] = chains
     return row
@@ -1650,9 +1657,12 @@ def load_existing_output(path: Path, logger: logging.Logger):
         import pandas as pd  # pyright: ignore[reportMissingImports]
 
         try:
-            df = pd.read_excel(path, sheet_name="Kontakte")
+            df = pd.read_excel(path, sheet_name="Kontakty")
         except Exception:
-            df = pd.read_excel(path)
+            try:
+                df = pd.read_excel(path, sheet_name="Kontakte")
+            except Exception:
+                df = pd.read_excel(path)
         raw_records = df.fillna("").to_dict(orient="records")
         rows = []
         for rec in raw_records:

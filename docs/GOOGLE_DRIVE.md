@@ -11,7 +11,8 @@ Utwórz folder na Drive (np. **UA Materialy Budowlane Wyniki**) i ustaw secret:
 | Plik / folder | Opis |
 |---------------|------|
 | `ua_materialy_cache.json` | Cache Serper + kontakty |
-| `ua_materialy_kontakte.xlsx` | Excel kontaktów |
+| `ua_materialy_kontakte.xlsx` | Excel kontaktów (aktualny) |
+| `ua_materialy_zbiorczy.xlsx` | Jeden plik z append wszystkich Excel na Drive, kolumny po polsku |
 | `ua_materialy_scraper.log` | Log |
 | `ua_materialy_oblast_rotation.json` | Stan rotacji obwodów |
 | `wyslane/*.eml` | Kopie wysłanych maili |

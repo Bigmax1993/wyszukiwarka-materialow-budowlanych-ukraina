@@ -121,13 +121,14 @@ def write_sheets(
         xlsx_path=xlsx,
         lang=spec["lang"],
         campaign_id=spec["campaign_id"],
+        main_sheet_names=("Kontakty", "Kontakte"),
     )
     write_excel_with_reply_styles(
         xlsx,
         {
             "Info": scraper.build_excel_info_sheet_rows(),
-            "Kontakte": export_rows,
-            "Wojewodztwa": state_rows,
+            "Kontakty": export_rows,
+            "Obwody": state_rows,
         },
         cache,
         cfg,
