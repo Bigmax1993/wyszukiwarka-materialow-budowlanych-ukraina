@@ -122,8 +122,24 @@ def _collect_wyslane_eml(root: Path) -> list[Path]:
     return [p for p in root.rglob("*.eml") if p.is_file()]
 
 
-def _prune_heavy_non_excel(folder: Path) -> None:
-    """Usuwa ciezkie pliki (log, website crawl niepotrzebny) — zostawia xlsx/cache/eml."""
+def _slim_cache_file(path: Path) -> Path:
+    """Zostaw w pliku tylko contacts (bez website_crawl — setki MB)."""
+    contacts = recover_contacts_from_cache_file(path)
+    slim = path.with_name(path.stem + "_contacts_only.json")
+    slim.write_text(
+        json.dumps({"contacts": contacts}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    return slim
+
+
+def _prune_heavy_non_excel(folder: Path) -> list[Path]:
+    """Zostawia xlsx/eml + odchudzony cache contacts; reszte usuwa."""
+    slim_caches: list[Path] = []
     for path in list(folder.rglob("*")):
         if not path.is_file():
             continue
@@ -131,13 +147,16 @@ def _prune_heavy_non_excel(folder: Path) -> None:
         if path.suffix.lower() in {".xlsx", ".eml"}:
             continue
         if low.endswith("cache.json") or low.endswith("_cache.json"):
-            continue
-        if low.endswith("rotation.json"):
+            try:
+                slim_caches.append(_slim_cache_file(path))
+            except Exception as exc:
+                print(f"    cache slim fail {path.name}: {exc}")
             continue
         try:
             path.unlink()
         except OSError:
             pass
+    return slim_caches
 
 
 def _latest_github_artifacts(repo: str) -> list[dict]:
@@ -213,13 +232,12 @@ def _download_github_sources(
         if proc.returncode != 0:
             print(f"    pominieto: {(proc.stderr or proc.stdout)[:240]}")
             continue
-        _prune_heavy_non_excel(folder)
+        slim = _prune_heavy_non_excel(folder)
         found_x = _collect_xlsx(folder)
-        found_c = _collect_cache_json(folder)
         found_e = _collect_wyslane_eml(folder)
-        print(f"    Excel={len(found_x)} cache={len(found_c)} eml={len(found_e)}")
+        print(f"    Excel={len(found_x)} cache={len(slim)} eml={len(found_e)}")
         xlsx.extend(found_x)
-        caches.extend(found_c)
+        caches.extend(slim)
         emls.extend(found_e)
     return xlsx, caches, emls
 
