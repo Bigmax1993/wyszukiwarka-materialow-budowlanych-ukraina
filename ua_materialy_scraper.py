@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Serper API – UA: hurtownie / składy / producenci materiałów budowlanych (GU), którzy stawiają sklepy/markety (Neubau, Filialbau)
 lub robią przebudowy/umbau i modernizację filii (Rewe, Aldi, Kaufland, Netto, Penny, Edeka).
