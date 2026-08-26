@@ -1,0 +1,44 @@
+name: UA cleanup Drive (keep zbiorczy/json/log)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Tylko lista (1) albo usun (0)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+
+env:
+  GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID_UA }}
+  PYTHONUTF8: "1"
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements-drive.txt
+
+      - name: Usun zbędne pliki na Drive
+        env:
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_OAUTH_CLIENT_ID: ${{ secrets.GDRIVE_OAUTH_CLIENT_ID }}
+          GDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.GDRIVE_OAUTH_CLIENT_SECRET }}
+          GDRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GDRIVE_OAUTH_REFRESH_TOKEN }}
+          GDRIVE_IMPERSONATE_EMAIL: ${{ secrets.GDRIVE_IMPERSONATE_EMAIL }}
+          GDRIVE_SHARED_DRIVE_ID: ${{ secrets.GDRIVE_SHARED_DRIVE_ID }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "1" ]; then
+            python scripts/cleanup_drive_ua_keep_zbiorczy.py --campaign ua --dry-run
+          else
+            python scripts/cleanup_drive_ua_keep_zbiorczy.py --campaign ua
+          fi
