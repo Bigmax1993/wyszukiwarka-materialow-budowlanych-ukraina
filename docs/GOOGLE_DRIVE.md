@@ -27,7 +27,7 @@ Pozostałe pliki (stare `ua_materialy_kontakte*.xlsx`, inne artefakty) usuwa wor
 | Workflow ręczny | `UA merge Excel Drive` (`ua_merge_drive_excel.yml`) |
 | Po sync poniedziałkowym | krok w `sync-google-drive-ua.yml` |
 | Źródła | Excel z Drive + najnowsze artefakty `ua-materialy-wyniki-{thu,pi,mon,tue,fri,reminders}` |
-| Zakres | **tylko wiersze z plików Excel** (bez dopisywania odrzuconych z cache JSON) |
+| Zakres | **wiersze firm tylko z Exceli**; puste kolumny mail/odpowiedź/`Wysłano` uzupełniane z cache JSON i `wyslane/*.eml` |
 | Arkusze | `Info`, `Kontakty`, `Obwody` — append, unia kolumn, nagłówki PL |
 | Upload | `version_xlsx=False` — zawsze ten sam `ua_materialy_zbiorczy.xlsx` |
 

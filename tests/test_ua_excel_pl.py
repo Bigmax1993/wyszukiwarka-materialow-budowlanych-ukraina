@@ -142,5 +142,38 @@ class ExcelPlAppendTest(unittest.TestCase):
             self.assertNotIn("Firmenname", list(book[SHEET_KONTAKTY].columns))
 
 
+class MergeEnrichMailColsTest(unittest.TestCase):
+    def test_wyslane_name_to_email_and_stamp(self):
+        from merge_drive_excel_pl import _email_from_wyslane_name
+
+        email, stamp = _email_from_wyslane_name(
+            "2026-07-13_101823_mag_at_dimaks.com.ua_Zapytanie.eml"
+        )
+        self.assertEqual(email, "mag@dimaks.com.ua")
+        self.assertEqual(stamp, "2026-07-13 10:18:23")
+
+    def test_enrich_fills_status_maila_and_wyslano(self):
+        from merge_drive_excel_pl import enrich_kontakty_rows
+
+        rows = [
+            {
+                "Nazwa firmy": "Dimaks",
+                "E-mail": "mag@dimaks.com.ua",
+                "URL": "https://dimaks.com.ua",
+                "Status": "sent",
+                "Status maila": "",
+                "Wysłano": "",
+            }
+        ]
+        enriched, stats = enrich_kontakty_rows(
+            rows,
+            contacts={},
+            sent_by_email={"mag@dimaks.com.ua": "2026-07-13 10:18:23"},
+        )
+        self.assertEqual(enriched[0]["Status maila"], "sent")
+        self.assertEqual(enriched[0]["Wysłano"], "2026-07-13 10:18:23")
+        self.assertGreaterEqual(stats["rows_touched"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
