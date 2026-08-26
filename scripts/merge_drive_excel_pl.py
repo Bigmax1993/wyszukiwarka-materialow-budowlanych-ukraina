@@ -122,41 +122,18 @@ def _collect_wyslane_eml(root: Path) -> list[Path]:
     return [p for p in root.rglob("*.eml") if p.is_file()]
 
 
-def _slim_cache_file(path: Path) -> Path:
-    """Zostaw w pliku tylko contacts (bez website_crawl — setki MB)."""
-    contacts = recover_contacts_from_cache_file(path)
-    slim = path.with_name(path.stem + "_contacts_only.json")
-    slim.write_text(
-        json.dumps({"contacts": contacts}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    try:
-        path.unlink()
-    except OSError:
-        pass
-    return slim
-
-
 def _prune_heavy_non_excel(folder: Path) -> list[Path]:
-    """Zostawia xlsx/eml + odchudzony cache contacts; reszte usuwa."""
-    slim_caches: list[Path] = []
+    """Zostawia xlsx + eml. Cache JSON z GH pomijamy (za ciezkie / contacts~0)."""
     for path in list(folder.rglob("*")):
         if not path.is_file():
             continue
-        low = path.name.lower()
         if path.suffix.lower() in {".xlsx", ".eml"}:
-            continue
-        if low.endswith("cache.json") or low.endswith("_cache.json"):
-            try:
-                slim_caches.append(_slim_cache_file(path))
-            except Exception as exc:
-                print(f"    cache slim fail {path.name}: {exc}")
             continue
         try:
             path.unlink()
         except OSError:
             pass
-    return slim_caches
+    return []
 
 
 def _latest_github_artifacts(repo: str) -> list[dict]:
@@ -203,7 +180,7 @@ def _download_github_sources(
     emls: list[Path] = []
     if not artifacts:
         return xlsx, caches, emls
-    print(f"Pobieram {len(artifacts)} artefaktow GitHub (xlsx + cache + wyslane):")
+    print(f"Pobieram {len(artifacts)} artefaktow GitHub (xlsx + wyslane eml):")
     for meta in artifacts:
         name = meta["name"]
         run_id = meta.get("run_id")
@@ -232,12 +209,11 @@ def _download_github_sources(
         if proc.returncode != 0:
             print(f"    pominieto: {(proc.stderr or proc.stdout)[:240]}")
             continue
-        slim = _prune_heavy_non_excel(folder)
+        _prune_heavy_non_excel(folder)
         found_x = _collect_xlsx(folder)
         found_e = _collect_wyslane_eml(folder)
-        print(f"    Excel={len(found_x)} cache={len(slim)} eml={len(found_e)}")
+        print(f"    Excel={len(found_x)} eml={len(found_e)}")
         xlsx.extend(found_x)
-        caches.extend(slim)
         emls.extend(found_e)
     return xlsx, caches, emls
 
@@ -494,6 +470,11 @@ def main() -> int:
             xlsx_paths.append(dest)
         for meta in remote_json:
             name = meta.get("name") or f"{meta.get('id')}.json"
+            # Pomin ciezkie cache z Drive (website_crawl) — kontakty i tak ~puste
+            size = int(meta.get("size") or 0)
+            if size > 5_000_000:
+                print(f"  json skip (za duzy {size} B): {name}")
+                continue
             dest = _unique_dest(drive_dir, name)
             print(f"  json {name}")
             gdrive.download_drive_file(service, meta["id"], dest)

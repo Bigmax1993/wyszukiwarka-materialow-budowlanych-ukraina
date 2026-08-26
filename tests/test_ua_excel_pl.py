@@ -144,6 +144,9 @@ class ExcelPlAppendTest(unittest.TestCase):
 
 class MergeEnrichMailColsTest(unittest.TestCase):
     def test_wyslane_name_to_email_and_stamp(self):
+        scripts = ROOT / "scripts"
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
         from merge_drive_excel_pl import _email_from_wyslane_name
 
         email, stamp = _email_from_wyslane_name(
@@ -153,6 +156,9 @@ class MergeEnrichMailColsTest(unittest.TestCase):
         self.assertEqual(stamp, "2026-07-13 10:18:23")
 
     def test_enrich_fills_status_maila_and_wyslano(self):
+        scripts = ROOT / "scripts"
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
         from merge_drive_excel_pl import enrich_kontakty_rows
 
         rows = [
