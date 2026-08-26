@@ -213,17 +213,17 @@ def normalize_record(rec: dict[str, Any]) -> dict[str, str]:
 
 
 def _row_key(sheet: str, rec: dict[str, str]) -> str:
-    keys = SHEET_DEDUPE_KEYS.get(sheet, ())
-    for key in keys:
-        val = (rec.get(key) or "").strip()
-        if val:
-            return f"{key}::{val.casefold()}"
-    name = (rec.get("Nazwa firmy") or "").strip()
-    addr = (rec.get("Adres") or "").strip()
-    oblast = (rec.get("Obwód") or "").strip()
-    topic = (rec.get("Temat") or "").strip()
-    blob = topic or f"{name}|{addr}|{oblast}"
-    return blob.casefold() if blob else ""
+    """Klucz deduplikacji: tylko konkretny URL albo e-mail. Puste nie skleja firm."""
+    if sheet == SHEET_INFO:
+        topic = (rec.get("Temat") or "").strip()
+        return f"Temat::{topic.casefold()}" if topic else ""
+    url = (rec.get("URL") or rec.get("Strona www") or "").strip().rstrip("/")
+    if url.lower().startswith("http"):
+        return f"URL::{url.casefold()}"
+    email = (rec.get("E-mail") or "").strip()
+    if "@" in email:
+        return f"E-mail::{email.casefold()}"
+    return ""
 
 
 def _merge_row(old: dict[str, str], new: dict[str, str]) -> dict[str, str]:
@@ -289,23 +289,32 @@ def ordered_columns(sheet: str, rows: Iterable[dict[str, str]]) -> list[str]:
     return out + extras
 
 
-def merge_workbooks(paths: list[Path]) -> dict[str, list[dict[str, str]]]:
-    """Kolejność plików = od najstarszego; nowsze dopisują / uzupełniają."""
+def load_workbook_sheets(path: Path) -> dict[str, list[dict[str, str]]]:
     import pandas as pd  # pyright: ignore[reportMissingImports]
 
+    out: dict[str, list[dict[str, str]]] = {}
+    book = pd.read_excel(path, sheet_name=None, dtype=str)
+    for raw_name, df in (book or {}).items():
+        sheet = canonical_sheet_name(raw_name)
+        frame = df.fillna("")
+        out.setdefault(sheet, [])
+        out[sheet].extend(normalize_record(rec) for rec in frame.to_dict(orient="records"))
+    return out
+
+
+def merge_workbooks(paths: list[Path]) -> dict[str, list[dict[str, str]]]:
+    """Kolejność plików = od najstarszego; nowsze dopisują / uzupełniają."""
     merged: dict[str, list[dict[str, str]]] = {
         SHEET_INFO: [],
         SHEET_KONTAKTY: [],
         SHEET_OBWODY: [],
     }
     for path in paths:
-        book = pd.read_excel(path, sheet_name=None, dtype=str)
-        for raw_name, df in (book or {}).items():
-            sheet = canonical_sheet_name(raw_name)
-            if sheet not in merged:
-                merged[sheet] = []
-            frame = df.fillna("")
-            records = [normalize_record(rec) for rec in frame.to_dict(orient="records")]
+        loaded = load_workbook_sheets(path)
+        counts = {name: len(rows) for name, rows in loaded.items()}
+        print(f"  {path.name}: {counts}")
+        for sheet, records in loaded.items():
+            merged.setdefault(sheet, [])
             merged[sheet] = append_sheet_rows(merged[sheet], records, sheet=sheet)
     return merged
 

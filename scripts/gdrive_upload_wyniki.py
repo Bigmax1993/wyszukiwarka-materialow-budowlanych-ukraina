@@ -414,15 +414,80 @@ def list_xlsx_in_folder(service, folder_id: str, *, corpora: str = "allDrives") 
         page_token = res.get("nextPageToken")
         if not page_token:
             break
-    files.sort(key=lambda f: (f.get("createdTime") or "", f.get("name") or ""))
+    files.sort(key=lambda f: (f.get("modifiedTime") or f.get("createdTime") or "", f.get("name") or ""))
     return files
 
 
-def download_drive_file(service, file_id: str, dest: Path) -> Path:
+def list_json_in_folder(service, folder_id: str, *, corpora: str = "allDrives") -> list[dict]:
+    q = (
+        f"'{folder_id}' in parents and trashed = false and "
+        f"(mimeType = 'application/json' or mimeType = 'text/plain' or name contains 'cache.json')"
+    )
+    files: list[dict] = []
+    page_token = None
+    while True:
+        res = (
+            service.files()
+            .list(
+                q=q,
+                fields="nextPageToken, files(id,name,createdTime,modifiedTime,mimeType)",
+                pageSize=100,
+                pageToken=page_token,
+                corpora=corpora,
+                **_LIST_OPTS,
+            )
+            .execute()
+        )
+        files.extend(res.get("files") or [])
+        page_token = res.get("nextPageToken")
+        if not page_token:
+            break
+    files = [f for f in files if "cache" in (f.get("name") or "").lower()]
+    files.sort(key=lambda f: (f.get("modifiedTime") or f.get("createdTime") or "", f.get("name") or ""))
+    return files
+
+
+def list_google_sheets_in_folder(service, folder_id: str, *, corpora: str = "allDrives") -> list[dict]:
+    q = (
+        f"'{folder_id}' in parents and trashed = false and "
+        f"mimeType = 'application/vnd.google-apps.spreadsheet'"
+    )
+    files: list[dict] = []
+    page_token = None
+    while True:
+        res = (
+            service.files()
+            .list(
+                q=q,
+                fields="nextPageToken, files(id,name,createdTime,modifiedTime,mimeType)",
+                pageSize=100,
+                pageToken=page_token,
+                corpora=corpora,
+                **_LIST_OPTS,
+            )
+            .execute()
+        )
+        files.extend(res.get("files") or [])
+        page_token = res.get("nextPageToken")
+        if not page_token:
+            break
+    files.sort(key=lambda f: (f.get("modifiedTime") or f.get("createdTime") or "", f.get("name") or ""))
+    return files
+
+
+def download_drive_file(service, file_id: str, dest: Path, *, mime_type: str = "") -> Path:
     from googleapiclient.http import MediaIoBaseDownload
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    request = service.files().get_media(fileId=file_id, **_DRIVE_API_OPTS)
+    if mime_type == "application/vnd.google-apps.spreadsheet":
+        if dest.suffix.lower() != ".xlsx":
+            dest = dest.with_suffix(".xlsx")
+        request = service.files().export_media(
+            fileId=file_id,
+            mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    else:
+        request = service.files().get_media(fileId=file_id, **_DRIVE_API_OPTS)
     with dest.open("wb") as fh:
         downloader = MediaIoBaseDownload(fh, request)
         done = False

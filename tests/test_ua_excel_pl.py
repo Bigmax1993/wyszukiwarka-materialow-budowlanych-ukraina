@@ -87,6 +87,12 @@ class ExcelPlAppendTest(unittest.TestCase):
         self.assertIn("Kategoria materiałów", cols)
         self.assertLess(cols.index("Nazwa firmy"), cols.index("Kategoria materiałów"))
 
+    def test_rows_without_url_or_email_are_not_collapsed(self):
+        existing = [{"Nazwa firmy": "Nieznana firma", "Adres": "A"}]
+        incoming = [{"Nazwa firmy": "Nieznana firma", "Adres": "B", "Telefon": "1"}]
+        rows = append_sheet_rows(existing, incoming, sheet=SHEET_KONTAKTY)
+        self.assertEqual(len(rows), 2)
+
     def test_merge_two_xlsx_files(self):
         import pandas as pd
 
