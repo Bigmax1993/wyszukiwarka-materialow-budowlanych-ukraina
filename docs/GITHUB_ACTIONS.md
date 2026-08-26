@@ -6,11 +6,11 @@ Kampania PL (osobne repo): [wyszukiwarka-materialow-budowlanych-polska](https://
 
 > **DE GU:** workflowy `de_gu_*.yml` nie istnieją. Kod w `legacy/de_gu/`.
 
-## Workflowy (9)
+## Workflowy (11)
 
 | Workflow | Plik | Trigger | Co robi |
 |----------|------|---------|---------|
-| **Tests** | `tests.yml` | push, PR | smoke UA + pytest + `test_repo_isolation` |
+| **Tests** | `tests.yml` | push, PR, ręcznie | smoke UA + regresja + pytest (izolacja, crawl, Excel PL, …) |
 | **CI Deploy** | `ci-deploy.yml` | push | smoke UA + secrets + dry-run maili |
 | **UA discovery** | `ua_materialy_pi.yml` | cron, ręcznie | Discovery pon–pt → `ua-materialy-wyniki-pi` |
 | **UA niedziela backfill** | `ua_materialy_thu.yml` | cron, ręcznie | Backfill + Excel → Drive → walidacja JSON → `ua-materialy-wyniki-thu` |
@@ -18,8 +18,11 @@ Kampania PL (osobne repo): [wyszukiwarka-materialow-budowlanych-polska](https://
 | **UA poniedzialek send** | `ua_materialy_tue.yml` | cron, ręcznie | Wysyłka partia 1 (300) → `ua-materialy-wyniki-tue` |
 | **UA wtorek send** | `ua_materialy_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `ua-materialy-wyniki-fri` |
 | **UA sync + przypomnienia** | `ua_materialy_reminders.yml` | cron co 3 dni, ręcznie | IMAP + przypomnienia → `ua-materialy-wyniki-reminders` |
-| **Sync wyniki Google Drive UA** | `sync-google-drive-ua.yml` | cron pon 06:00, ręcznie | Upload `Wyniki/` → folder UA + Excel zbiorczy |
-| **UA merge Excel Drive** | `ua_merge_drive_excel.yml` | ręcznie | Jeden `ua_materialy_zbiorczy.xlsx` z wszystkich Excel na Drive |
+| **Sync wyniki Google Drive UA** | `sync-google-drive-ua.yml` | cron pon 06:00, ręcznie | Upload `Wyniki/` → folder UA + przebudowa `ua_materialy_zbiorczy.xlsx` |
+| **UA merge Excel Drive** | `ua_merge_drive_excel.yml` | ręcznie | Zbiorczy Excel: Drive + artefakty GH, **tylko wiersze Excel**, kolumny PL |
+| **UA cleanup Drive** | `ua_cleanup_drive.yml` | ręcznie | Kosz: wszystko oprócz zbiorczego, `.json`, `.log` |
+
+Merge i cleanup **nie** są w grupie concurrency `ua-pipeline` (nie kasują discovery).
 
 ## Harmonogram cron (Europe/Warsaw)
 
@@ -36,6 +39,18 @@ Kampania PL (osobne repo): [wyszukiwarka-materialow-budowlanych-polska](https://
 | Poniedziałek | send 1 | `0 9 * * 1` | **09:00** |
 | Wtorek | send 2 | `0 9 * * 2` | **09:00** |
 | Co 3 dni | sync + przypomnienia | `0 10 1,4,7,10,13,16,19,22,25,28 * *` | **10:00** |
+
+## Excel zbiorczy i Drive
+
+1. Sync / merge buduje `ua_materialy_zbiorczy.xlsx` z Exceli na Drive oraz z najnowszych artefaktów `ua-materialy-wyniki-*` (bez cache JSON jako źródła firm).
+2. Plik na Drive jest **nadpisywany** (bez daty w nazwie).
+3. Opcjonalnie `UA cleanup Drive` usuwa stare `ua_materialy_kontakte*.xlsx`, zostawiając zbiorczy + JSON + log.
+
+Szczegóły: [`GOOGLE_DRIVE.md`](GOOGLE_DRIVE.md).
+
+## Crawl / discovery
+
+Crawl www pomija binarki (np. `.exe` w query stringu, ścieżki `/download/file`) i nie robi retry na typowych 4xx (poza 408/429), żeby discovery nie wisiał na zbędnych pobraniach.
 
 ## Odpowiedzi i przypomnienia
 
@@ -77,7 +92,7 @@ pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → nd→thu → sync UA → 
 
 **Maile spersonalizowane (od 2026-07-13):** Claude wybiera średnią regionalną firmę budowlaną z obwodu discovery i podaje **realny adres** obiektu z bazy `ua_regional_construction_refs.py`. W GHA: `UA_REGIONAL_INQUIRY_EMAIL_FROM=2026-07-13`.
 
-Concurrency: `ua-pipeline`.
+Concurrency pipeline: `ua-pipeline` (discovery / send / backfill). Merge i cleanup poza tą grupą.
 
 ## Ręczne uruchomienie
 
@@ -86,10 +101,14 @@ gh workflow run "UA discovery" -R Bigmax1993/wyszukiwarka-materialow-budowlanych
 gh workflow run "UA discovery" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f discovery_phase=mon
 gh workflow run "UA niedziela backfill" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
 gh workflow run "Sync wyniki Google Drive UA" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "UA merge Excel Drive" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "UA cleanup Drive (keep zbiorczy/json/log)" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "UA cleanup Drive (keep zbiorczy/json/log)" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f dry_run=1
 gh workflow run "UA poniedzialek prep" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
 gh workflow run "UA poniedzialek send" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f force_resend=true
 gh workflow run "UA wtorek send" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f force_resend=true
 gh workflow run "UA sync odpowiedzi i przypomnienia" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+gh workflow run "Tests" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
 ```
 
 Pełny łańcuch: `scripts/run_full_pipeline_gha.ps1`

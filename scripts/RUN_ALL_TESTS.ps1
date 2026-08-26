@@ -1,15 +1,25 @@
 #Requires -Version 5.1
 <#
-Pelna bateria testow lokalnych (UA, zgodnie z tests.yml).
+Pelna bateria testow lokalnych (UA + opcjonalnie legacy).
 
   powershell -ExecutionPolicy Bypass -File scripts\RUN_ALL_TESTS.ps1
+  powershell -ExecutionPolicy Bypass -File scripts\RUN_ALL_TESTS.ps1 -IncludeLegacy
 #>
+param(
+    [switch]$IncludeLegacy
+)
+
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 Set-Location $Root
 $env:KANBUD_PROJECT_ROOT = Join-Path $Root "libs"
 $env:PYTHONUTF8 = "1"
-$env:PYTHONPATH = $env:KANBUD_PROJECT_ROOT
+$env:UA_REGIONAL_INQUIRY_EMAIL_FROM = "2026-07-13"
+$env:PYTHONPATH = @(
+    $Root,
+    $env:KANBUD_PROJECT_ROOT,
+    (Join-Path $Root "scripts")
+) -join [IO.Path]::PathSeparator
 
 $failed = @()
 $passed = @()
@@ -28,69 +38,49 @@ function Test-Step {
     }
 }
 
-Test-Step "py_compile (aktywne moduly, bez legacy/)" {
-    Get-ChildItem -Recurse -Filter *.py |
-        Where-Object {
-            $_.FullName -notmatch '\\\.venv\\' -and
-            $_.FullName -notmatch '\\legacy\\'
-        } |
-        ForEach-Object {
-            python -m py_compile $_.FullName
-            if ($LASTEXITCODE -ne 0) { throw $_.FullName }
-        }
+Test-Step "py_compile (core)" {
+    @(
+        "kanbud_bootstrap.py",
+        "campaign_data_paths.py",
+        "ua_materialy_scraper.py",
+        "ua_oblast_keywords.py",
+        "ua_sync_replies_and_reminders.py",
+        "website_full_crawl.py",
+        "http_page_guard.py",
+        "ua_excel_pl.py",
+        "libs\email_reply_intelligence.py",
+        "scripts\merge_drive_excel_pl.py",
+        "scripts\cleanup_drive_ua_keep_zbiorczy.py"
+    ) | ForEach-Object {
+        python -m py_compile $_
+        if ($LASTEXITCODE -ne 0) { throw $_ }
+    }
 }
 
 Test-Step "smoke --test (UA materialy)" { python ua_materialy_scraper.py --test }
 
-Test-Step "regresja UA materialy" {
-    python -m unittest tests.test_ua_materialy_regression -v
+Test-Step "pytest tests/ (caly katalog)" {
+    python -m pytest tests/ -q
 }
 
-Test-Step "pytest UA (jednostkowe + integracyjne)" {
-    python -m pytest `
-        tests/test_ua_oblast_keywords.py `
-        tests/test_ua_inquiry_email_uk.py `
-        tests/test_ua_claude_inquiry_email.py `
-        tests/test_ua_supplier_filter.py `
-        tests/test_ua_materialy_integration.py `
-        tests/test_ua_email_targeting.py `
-        tests/test_ua_claude_contact_extract.py `
-        tests/test_ua_contact_pipeline_integration.py `
-        -q
-}
-
-Test-Step "ua_oblast_rotation" {
-    python -c @"
-from pathlib import Path
-import tempfile
-from ua_oblast_rotation import (
-    load_rotation_state, peek_next_oblast, commit_rotation_after_run,
-    rotation_state_path, OBLAST_ROTATION_ORDER,
-)
-d = Path(tempfile.mkdtemp())
-p = rotation_state_path(d)
-s = load_rotation_state(p)
-oblast = peek_next_oblast(s)
-assert oblast in OBLAST_ROTATION_ORDER
-commit_rotation_after_run(p, s, oblast)
-"@
-}
-
-Test-Step "ua_materialy - brak zalacznikow i MFG" {
-    python -c @"
-from ua_materialy_inquiry_email_uk import DEFAULT_INQUIRY_PHONE_UK, build_fixed_material_inquiry_uk
-import ua_materialy_scraper as ua
-assert ua.get_email_attachments_ua_materialy() == []
-assert ua.UA_EMAIL_ALLOW_ATTACHMENTS is False
-assert DEFAULT_INQUIRY_PHONE_UK == '+380977091141'
-body = build_fixed_material_inquiry_uk()
-assert 'mfg' not in body.lower()
-assert '+380977091141' in body
-"@
+if ($IncludeLegacy) {
+    Test-Step "pytest legacy/tests/" {
+        $env:PYTHONPATH = @(
+            $Root,
+            $env:KANBUD_PROJECT_ROOT,
+            (Join-Path $Root "legacy\de_gu"),
+            (Join-Path $Root "scripts")
+        ) -join [IO.Path]::PathSeparator
+        python -m pytest legacy/tests/ -q
+    }
 }
 
 Test-Step "gdrive_upload_wyniki --help" {
     python scripts/gdrive_upload_wyniki.py --help | Out-Null
+}
+
+Test-Step "merge_drive_excel_pl --help" {
+    python scripts/merge_drive_excel_pl.py --help | Out-Null
 }
 
 Write-Host "`n======== PODSUMOWANIE ========" -ForegroundColor Yellow

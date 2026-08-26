@@ -26,7 +26,9 @@ Maile: Claude Sonnet, język ukraiński, **bez załączników**. Nadawca: `MAIL_
 
 Przypomnienia: **jedno** — dopiero po **3 dniach** od pierwszego maila; pomijane, jeśli odpowiedź przyszła w tym oknie.
 
-Wyniki: `Wyniki/ua_materialy_cache.json`, `ua_materialy_kontakte.xlsx`, `ua_materialy_oblast_rotation.json`.
+Wyniki lokalne: `Wyniki/ua_materialy_cache.json`, `ua_materialy_kontakte.xlsx`, `ua_materialy_oblast_rotation.json`.
+
+Na Google Drive docelowo: **`ua_materialy_zbiorczy.xlsx`** (unia Excel), cache JSON, rotacja, log — patrz [`docs/GOOGLE_DRIVE.md`](docs/GOOGLE_DRIVE.md).
 
 ---
 
@@ -52,12 +54,16 @@ Skopiuj `.env.example` → `.env` (lokalnie; na CI ustaw [GitHub Secrets](#githu
 
 ```powershell
 $env:KANBUD_PROJECT_ROOT = "$PWD\libs"
+$env:UA_REGIONAL_INQUIRY_EMAIL_FROM = "2026-07-13"
 python ua_materialy_scraper.py --test
-python -m unittest tests.test_ua_materialy_regression -v
-python -m pytest tests/test_ua_oblast_keywords.py tests/test_ua_inquiry_email_uk.py tests/test_ua_claude_inquiry_email.py tests/test_ua_supplier_filter.py tests/test_ua_materialy_integration.py tests/test_ua_email_targeting.py tests/test_ua_claude_contact_extract.py tests/test_ua_contact_pipeline_integration.py tests/test_repo_isolation.py -q
+python -m pytest tests/ -q
+python -m pytest legacy/tests/ -q   # opcjonalnie: archiwum DE GU
 ```
 
-Pełna bateria: `powershell -ExecutionPolicy Bypass -File scripts\RUN_ALL_TESTS.ps1`
+Pełna bateria (compile + smoke + `pytest tests/`): `powershell -ExecutionPolicy Bypass -File scripts\RUN_ALL_TESTS.ps1`  
+Z legacy DE: dodaj `-IncludeLegacy`.
+
+CI (`tests.yml`) odpalą smoke + subset pytest (m.in. izolacja PL, crawl, Excel PL, reminder). Lokalnie `pytest tests/` = cały katalog.
 
 `tests/test_repo_isolation.py` — regresja: brak plików kampanii PL w tym repo.
 
@@ -111,9 +117,9 @@ IMAP wymaga tych samych `MAIL_USER` / `MAIL_PASSWORD` co wysyłka. **Jedno** prz
 
 Dokumentacja: [`docs/GITHUB_ACTIONS.md`](docs/GITHUB_ACTIONS.md)
 
-9 workflowów: `ua_materialy_{pi,thu,mon,tue,fri,reminders}.yml`, `sync-google-drive-ua.yml`, `tests.yml`, `ci-deploy.yml`.
+11 workflowów produkcyjnych/docs: discovery/send/reminders + `sync-google-drive-ua.yml`, `ua_merge_drive_excel.yml`, `ua_cleanup_drive.yml`, `tests.yml`, `ci-deploy.yml`.
 
-Concurrency: `ua-pipeline` (w tym repo).
+Concurrency: `ua-pipeline` (discovery/send/backfill). Merge Excel i cleanup Drive poza tą grupą.
 
 ### GitHub Secrets
 
