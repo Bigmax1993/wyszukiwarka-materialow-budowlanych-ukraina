@@ -19,7 +19,7 @@ Kampania PL (osobne repo): [wyszukiwarka-materialow-budowlanych-polska](https://
 | **UA wtorek send** | `ua_materialy_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `ua-materialy-wyniki-fri` |
 | **UA sync + przypomnienia** | `ua_materialy_reminders.yml` | cron co 3 dni, ręcznie | IMAP + przypomnienia → `ua-materialy-wyniki-reminders` |
 | **Sync wyniki Google Drive UA** | `sync-google-drive-ua.yml` | cron pon 06:00, ręcznie | Upload `Wyniki/` → folder UA + przebudowa `ua_materialy_zbiorczy.xlsx` |
-| **UA merge Excel Drive** | `ua_merge_drive_excel.yml` | ręcznie | Zbiorczy Excel: Drive + artefakty GH (wiersze z Excel); uzupełnia mail/`Wysłano`/odpowiedzi z cache + `wyslane/` |
+| **UA merge Excel Drive** | `ua_merge_drive_excel.yml` | ręcznie | Zbiorczy Excel: Drive + artefakty GH (wiersze z Excel); **bez** kolumn mail/odpowiedź/cena |
 | **UA cleanup Drive** | `ua_cleanup_drive.yml` | ręcznie | Kosz: wszystko oprócz zbiorczego, `.json`, `.log` |
 
 Merge i cleanup **nie** są w grupie concurrency `ua-pipeline` (nie kasują discovery).

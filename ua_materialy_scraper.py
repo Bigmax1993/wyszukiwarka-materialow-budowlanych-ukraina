@@ -1525,9 +1525,6 @@ def build_export_rows(rows, logger=None, cache=None, require_eligible=True):
         }
         if cache is not None and email:
             base = merge_export_row(base, cache, email, lang="uk")
-        # Status (pipeline) i Status maila (arkusz odpowiedzi) — nie gub przy pustym cache
-        if (base.get("Status") or "").strip() and not (base.get("Status maila") or "").strip():
-            base["Status maila"] = (base.get("Status") or "").strip()
         export_rows.append(base)
     if logger is not None:
         with_mail = sum(1 for r in export_rows if (r.get("E-mail") or "").strip())

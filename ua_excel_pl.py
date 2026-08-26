@@ -85,10 +85,6 @@ FLAG_COLUMNS = frozenset(
         "WWW sprawdzone",
         "Mała firma",
         "Generalny wykonawca",
-        "Odpowiedź",
-        "Wymaga interwencji",
-        "Odczytane (Twoja reakcja)",
-        "Zadzwoń?",
     }
 )
 
@@ -111,6 +107,27 @@ _FALSE_VALUES = {
     "ні.",
 }
 
+# Kolumny mail/odpowiedz/cena — NIGDY w ua_materialy_zbiorczy.xlsx
+ZBIORCZY_FORBIDDEN_COLUMNS = frozenset(
+    {
+        "Status maila",
+        "Wysłano",
+        "Odpowiedź",
+        "Status odpowiedzi",
+        "Wymaga interwencji",
+        "Odczytane (Twoja reakcja)",
+        "Cena",
+        "Waluta",
+        "Opis",
+        "Ceny (wszystkie)",
+        "Źródło ceny",
+        "Zadzwoń?",
+        "Cena rel. 1",
+        "Cena rel. 2",
+        "Cena rel. 3",
+    }
+)
+
 KONTAKTY_COLUMNS = (
     "Nazwa firmy",
     "Adres",
@@ -125,21 +142,6 @@ KONTAKTY_COLUMNS = (
     "Generalny wykonawca",
     "Znacznik GW",
     "Status",
-    "Status maila",
-    "Wysłano",
-    "Odpowiedź",
-    "Status odpowiedzi",
-    "Wymaga interwencji",
-    "Odczytane (Twoja reakcja)",
-    "Cena",
-    "Waluta",
-    "Opis",
-    "Ceny (wszystkie)",
-    "Źródło ceny",
-    "Zadzwoń?",
-    "Cena rel. 1",
-    "Cena rel. 2",
-    "Cena rel. 3",
 )
 
 OBWODY_COLUMNS = (
@@ -201,6 +203,8 @@ def normalize_record(rec: dict[str, Any]) -> dict[str, str]:
     for key, val in (rec or {}).items():
         header = canonical_header(key)
         if not header or str(header).startswith("_") or header.casefold().startswith("unnamed"):
+            continue
+        if header in ZBIORCZY_FORBIDDEN_COLUMNS:
             continue
         cell = "" if val is None else str(val).strip()
         if header in FLAG_COLUMNS:
@@ -275,16 +279,21 @@ def ordered_columns(sheet: str, rows: Iterable[dict[str, str]]) -> list[str]:
     extras: list[str] = []
     present: set[str] = set()
     for rec in rows:
-        present.update(k for k in rec.keys() if k)
+        present.update(
+            k for k in rec.keys() if k and k not in ZBIORCZY_FORBIDDEN_COLUMNS
+        )
     for col in preferred:
+        if col in ZBIORCZY_FORBIDDEN_COLUMNS:
+            continue
         if col in present and col not in seen:
             out.append(col)
             seen.add(col)
     for rec in rows:
         for col in rec.keys():
-            if col and col not in seen:
-                extras.append(col)
-                seen.add(col)
+            if not col or col in seen or col in ZBIORCZY_FORBIDDEN_COLUMNS:
+                continue
+            extras.append(col)
+            seen.add(col)
     extras.sort(key=lambda c: c.casefold())
     return out + extras
 

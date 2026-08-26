@@ -142,43 +142,52 @@ class ExcelPlAppendTest(unittest.TestCase):
             self.assertNotIn("Firmenname", list(book[SHEET_KONTAKTY].columns))
 
 
-class MergeEnrichMailColsTest(unittest.TestCase):
-    def test_wyslane_name_to_email_and_stamp(self):
-        scripts = ROOT / "scripts"
-        if str(scripts) not in sys.path:
-            sys.path.insert(0, str(scripts))
-        from merge_drive_excel_pl import _email_from_wyslane_name
+class ZbiorczyForbiddenColumnsTest(unittest.TestCase):
+    def test_normalize_drops_mail_and_price_columns(self):
+        from ua_excel_pl import ZBIORCZY_FORBIDDEN_COLUMNS, normalize_record
 
-        email, stamp = _email_from_wyslane_name(
-            "2026-07-13_101823_mag_at_dimaks.com.ua_Zapytanie.eml"
-        )
-        self.assertEqual(email, "mag@dimaks.com.ua")
-        self.assertEqual(stamp, "2026-07-13 10:18:23")
-
-    def test_enrich_fills_status_maila_and_wyslano(self):
-        scripts = ROOT / "scripts"
-        if str(scripts) not in sys.path:
-            sys.path.insert(0, str(scripts))
-        from merge_drive_excel_pl import enrich_kontakty_rows
-
-        rows = [
+        rec = normalize_record(
             {
-                "Nazwa firmy": "Dimaks",
-                "E-mail": "mag@dimaks.com.ua",
-                "URL": "https://dimaks.com.ua",
-                "Status": "sent",
-                "Status maila": "",
-                "Wysłano": "",
+                "Nazwa firmy": "Alpha",
+                "URL": "https://alpha.ua",
+                "Status maila": "sent",
+                "Wysłano": "2026-07-13",
+                "Odpowiedź": "tak",
+                "Cena": "100",
+                "Zadzwoń?": "TAK",
             }
-        ]
-        enriched, stats = enrich_kontakty_rows(
-            rows,
-            contacts={},
-            sent_by_email={"mag@dimaks.com.ua": "2026-07-13 10:18:23"},
         )
-        self.assertEqual(enriched[0]["Status maila"], "sent")
-        self.assertEqual(enriched[0]["Wysłano"], "2026-07-13 10:18:23")
-        self.assertGreaterEqual(stats["rows_touched"], 1)
+        self.assertEqual(rec["Nazwa firmy"], "Alpha")
+        self.assertEqual(rec["URL"], "https://alpha.ua")
+        for col in ZBIORCZY_FORBIDDEN_COLUMNS:
+            self.assertNotIn(col, rec)
+
+    def test_merged_workbook_has_no_forbidden_columns(self):
+        import pandas as pd
+
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            src = d / "src.xlsx"
+            pd.DataFrame(
+                [
+                    {
+                        "Nazwa firmy": "Beta",
+                        "URL": "https://beta.ua",
+                        "Status maila": "sent",
+                        "Wysłano": "2026-08-01",
+                        "Cena": "10",
+                    }
+                ]
+            ).to_excel(src, index=False, sheet_name="Kontakty")
+            sheets = merge_workbooks([src])
+            out = d / "zbiorczy.xlsx"
+            write_merged_workbook(out, sheets)
+            book = pd.read_excel(out, sheet_name="Kontakty", dtype=str)
+            cols = list(book.columns)
+            self.assertIn("Nazwa firmy", cols)
+            self.assertNotIn("Status maila", cols)
+            self.assertNotIn("Wysłano", cols)
+            self.assertNotIn("Cena", cols)
 
 
 if __name__ == "__main__":
