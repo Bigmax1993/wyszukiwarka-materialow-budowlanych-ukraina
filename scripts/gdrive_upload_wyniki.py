@@ -430,7 +430,7 @@ def list_json_in_folder(service, folder_id: str, *, corpora: str = "allDrives") 
             service.files()
             .list(
                 q=q,
-                fields="nextPageToken, files(id,name,createdTime,modifiedTime,mimeType)",
+                fields="nextPageToken, files(id,name,createdTime,modifiedTime,mimeType,size)",
                 pageSize=100,
                 pageToken=page_token,
                 corpora=corpora,
