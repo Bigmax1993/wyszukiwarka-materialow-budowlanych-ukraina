@@ -2734,7 +2734,10 @@ def request_with_retry(
     for attempt in range(1, HTTP_RETRY_ATTEMPTS + 1):
         try:
             response = method(url, **kwargs)
-            if waf_skip and is_waf_blocked(response=response):
+            if waf_skip and is_waf_blocked(
+                response=response,
+                html="" if kwargs.get("stream") else None,
+            ):
                 reason = waf_block_reason(response=response)
                 logger.info(
                     "WAF/Cloudflare — pomijam (bez retry): %s [%s]",
@@ -2743,7 +2746,7 @@ def request_with_retry(
                 )
                 raise PageAccessBlocked(f"{safe_url}: {reason}")
             response.raise_for_status()
-            if waf_skip:
+            if waf_skip and not kwargs.get("stream"):
                 body = getattr(response, "text", "") or ""
                 if is_waf_blocked(response=response, html=body):
                     reason = waf_block_reason(response=response, html=body)
@@ -2766,6 +2769,12 @@ def request_with_retry(
                     reason,
                 )
                 raise PageAccessBlocked(f"{safe_url}: {reason}") from e
+            from http_page_guard import http_status_from_exc, should_retry_http_status
+
+            status = http_status_from_exc(e)
+            if not should_retry_http_status(status):
+                console_step(f"HTTP {status} — bez retry: {safe_url}")
+                break
             console_step(f"HTTP Retry {attempt}/{HTTP_RETRY_ATTEMPTS} {safe_url}: {e}")
             if _is_rate_limit_error(e) and not retry_on_rate_limit:
                 break
@@ -3038,8 +3047,16 @@ def sort_verification_urls(urls: list[str]) -> list[str]:
 
 
 def _fetch_page_html(url: str, logger: logging.Logger) -> str:
-    """Pobierz HTML jednej strony (requests + retry)."""
+    """Pobierz HTML jednej strony (requests + retry, bez binarek)."""
+    from website_full_crawl import (
+        is_skippable_asset_url,
+        read_response_html_capped,
+    )
+
     if not (url or "").strip().lower().startswith(("http://", "https://")):
+        return ""
+    if is_skippable_asset_url(url):
+        logger.info("Pominięto binarkę/asset: %s", sanitize_log_url(url))
         return ""
     headers = {
         "User-Agent": (
@@ -3054,9 +3071,19 @@ def _fetch_page_html(url: str, logger: logging.Logger) -> str:
             logger,
             headers=headers,
             timeout=REQUEST_TIMEOUT,
+            stream=True,
             waf_skip=True,
         )
-        return r.text or ""
+        html = read_response_html_capped(r)
+        if not html:
+            return ""
+        from http_page_guard import PageAccessBlocked, is_waf_blocked, waf_block_reason
+
+        if is_waf_blocked(response=r, html=html):
+            reason = waf_block_reason(response=r, html=html)
+            logger.info("Strona pominięta (WAF/Cloudflare): %s [%s]", url, reason)
+            return ""
+        return html
     except Exception as e:
         from http_page_guard import PageAccessBlocked
 
@@ -3123,6 +3150,7 @@ def _crawl_website_for_company(
         parse_html_page=_parse,
         normalize_website=normalize_website,
         on_step=console_step,
+        should_stop=is_scraper_runtime_limit_reached,
     )
     crawl_cache[website] = result
     console_step(

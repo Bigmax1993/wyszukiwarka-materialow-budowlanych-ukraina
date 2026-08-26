@@ -29,6 +29,9 @@ WAF_HTTP_STATUS_CODES = frozenset(
     }
 )
 
+# 4xx bez 408/429 — nie ma sensu retry (404 imprint 3x zjada minuty)
+_RETRYABLE_CLIENT_STATUSES = frozenset({408, 429})
+
 _WAF_STRONG_HTML_MARKERS = (
     "cf-browser-verification",
     "challenge-platform",
@@ -177,3 +180,18 @@ def waf_block_reason(
     if "cloudflare" in hdr or "cf-ray" in hdr:
         return "cloudflare_headers"
     return "waf_blocked"
+
+
+def http_status_from_exc(exc: BaseException | None) -> int | None:
+    if exc is None:
+        return None
+    return _status_from_exception(exc)
+
+
+def should_retry_http_status(status: int | None) -> bool:
+    """False dla 404/410/400 — bez backoffu. True gdy status nieznany."""
+    if status is None:
+        return True
+    if 400 <= status < 500:
+        return status in _RETRYABLE_CLIENT_STATUSES
+    return True

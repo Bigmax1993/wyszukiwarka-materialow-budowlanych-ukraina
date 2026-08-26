@@ -17,6 +17,9 @@ from website_full_crawl import (
     crawl_entire_website,
     extract_all_internal_links,
     format_crawl_text_for_claude,
+    is_probably_html_content_type,
+    is_skippable_asset_url,
+    read_response_html_capped,
     website_crawl_result_from_dict,
     website_crawl_result_to_dict,
 )
@@ -97,6 +100,139 @@ class WebsiteFullCrawlTest(unittest.TestCase):
         self.assertEqual(restored.urls_visited, original.urls_visited)
         self.assertEqual(restored.pages, original.pages)
         self.assertTrue(restored.capped)
+
+
+class SkipBinaryAndBudgetTest(unittest.TestCase):
+    def test_skips_exe_in_query_string(self):
+        url = (
+            "https://www.inproekt.kiev.ua/IVK/Download/File"
+            "?Name=ivk_update_1_920_3218.exe"
+        )
+        self.assertTrue(is_skippable_asset_url(url))
+
+    def test_skips_download_file_path(self):
+        self.assertTrue(
+            is_skippable_asset_url(
+                "https://www.inproekt.kiev.ua/IVK/Download/File?Name=list7.pdf"
+            )
+        )
+
+    def test_skips_rtf_in_query(self):
+        self.assertTrue(
+            is_skippable_asset_url(
+                "https://www.inproekt.kiev.ua/IVK/Download/File?Name=ivk920_3218.rtf"
+            )
+        )
+
+    def test_allows_html_pages(self):
+        self.assertFalse(is_skippable_asset_url("https://www.inproekt.kiev.ua/IVK"))
+        self.assertFalse(is_skippable_asset_url("https://bud24.com.ua/kontakty"))
+
+    def test_extract_does_not_queue_exe_links(self):
+        html = (
+            '<a href="/about">About</a>'
+            '<a href="/IVK/Download/File?Name=ivk_setup_1_920.exe">Setup</a>'
+        )
+        links = extract_all_internal_links(
+            "https://www.inproekt.kiev.ua/",
+            html,
+            site_domain="inproekt.kiev.ua",
+            normalize_website=_norm,
+        )
+        self.assertTrue(any("/about" in u.lower() for u in links))
+        self.assertFalse(any(".exe" in u.lower() for u in links))
+
+    def test_content_type_rejects_binaries(self):
+        self.assertFalse(is_probably_html_content_type("application/octet-stream"))
+        self.assertFalse(is_probably_html_content_type("application/x-msdownload"))
+        self.assertFalse(is_probably_html_content_type("application/pdf"))
+        self.assertTrue(is_probably_html_content_type("text/html; charset=utf-8"))
+        self.assertTrue(is_probably_html_content_type(""))
+
+    def test_read_capped_skips_exe_magic(self):
+        class _Resp:
+            headers = {"Content-Type": "application/octet-stream"}
+            _content = True
+            content = b"MZ" + b"\x00" * 100
+            encoding = "utf-8"
+
+            def close(self):
+                return None
+
+        self.assertEqual(read_response_html_capped(_Resp()), "")
+
+    def test_read_capped_accepts_html(self):
+        class _Resp:
+            headers = {"Content-Type": "text/html; charset=utf-8"}
+            _content = True
+            content = b"<html><body>Kontakt</body></html>"
+            encoding = "utf-8"
+
+            def close(self):
+                return None
+
+        self.assertIn("Kontakt", read_response_html_capped(_Resp()))
+
+    def test_crawl_stops_on_should_stop(self):
+        fetched: list[str] = []
+
+        def fetch(url: str) -> str:
+            fetched.append(url)
+            return "<p>ok</p><a href='/kolejna'>x</a>"
+
+        def parse(_url: str, html: str) -> dict:
+            return {"page_text": html, "contact_urls": []}
+
+        calls = {"n": 0}
+
+        def should_stop() -> bool:
+            calls["n"] += 1
+            return calls["n"] > 1
+
+        result = crawl_entire_website(
+            "https://example.de",
+            logger=MagicMock(),
+            fetch_page_html=fetch,
+            parse_html_page=parse,
+            normalize_website=_norm,
+            max_pages=10,
+            max_seconds=0,
+            should_stop=should_stop,
+        )
+        self.assertTrue(result.capped)
+        self.assertLessEqual(len(fetched), 1)
+
+    def test_crawl_does_not_fetch_exe_links(self):
+        fetched: list[str] = []
+        pages = {
+            "https://www.inproekt.kiev.ua": (
+                '<a href="/IVK">IVK</a>'
+                '<a href="/IVK/Download/File?Name=ivk_setup_1_920.exe">exe</a>'
+            ),
+            "https://www.inproekt.kiev.ua/IVK": "<p>Software</p>",
+        }
+
+        def fetch(url: str) -> str:
+            fetched.append(url)
+            if ".exe" in url.lower() or "/Download/File" in url:
+                raise AssertionError(f"should not fetch binary {url}")
+            key = url.rstrip("/")
+            return pages.get(key, pages.get(key + "/", ""))
+
+        def parse(_url: str, html: str) -> dict:
+            return {"page_text": html, "contact_urls": []}
+
+        result = crawl_entire_website(
+            "https://www.inproekt.kiev.ua",
+            logger=MagicMock(),
+            fetch_page_html=fetch,
+            parse_html_page=parse,
+            normalize_website=_norm,
+            max_pages=10,
+            max_seconds=0,
+        )
+        self.assertGreaterEqual(len(result.urls_visited), 1)
+        self.assertFalse(any(".exe" in u.lower() for u in fetched))
 
 
 if __name__ == "__main__":

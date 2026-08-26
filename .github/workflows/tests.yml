@@ -51,4 +51,6 @@ jobs:
             tests/test_ua_contact_pipeline_integration.py \
             tests/test_ua_reminder_email.py \
             tests/test_repo_isolation.py \
+            tests/test_website_full_crawl.py \
+            tests/test_http_page_guard.py \
             -q
