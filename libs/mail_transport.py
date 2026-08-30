@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Wspólna warstwa poczty: yagmail (Gmail) + archiwum IMAP i lokalne .eml.
+Wspólna warstwa poczty: yagmail (Gmail / SMTP) + archiwum IMAP i lokalne .eml.
 """
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from scraper_env import (
     ENV_IMAP_PORT,
     ENV_IMAP_SSL,
     ENV_MAIL_ARCHIVE_IMAP,
-    ENV_MAIL_IMAP_ARCHIVE_FOLDER,
     ENV_MAIL_BCC,
     ENV_MAIL_CC,
     ENV_MAIL_PASSWORD,
@@ -38,8 +37,8 @@ from scraper_env import (
     get_mail_user,
 )
 
-_DEFAULT_GMAIL_SMTP = "smtp.gmail.com"
-_DEFAULT_GMAIL_IMAP = "imap.gmail.com"
+_DEFAULT_HOMEPL_SMTP = "serwer.home.pl"
+_DEFAULT_HOMEPL_IMAP = "serwer.home.pl"
 _DEFAULT_SMTP_PORT_SSL = 465
 _DEFAULT_SMTP_PORT_STARTTLS = 587
 _DEFAULT_IMAP_PORT_SSL = 993
@@ -61,19 +60,25 @@ def get_smtp_host() -> str:
     host = get_env_value(ENV_SMTP_HOST).strip()
     if host:
         return host
-    return _DEFAULT_GMAIL_SMTP
+    if _is_gmail_address(_mail_address()):
+        return "smtp.gmail.com"
+    return _DEFAULT_HOMEPL_SMTP
 
 
 def get_imap_host() -> str:
     host = get_env_value(ENV_IMAP_HOST).strip()
     if host:
         return host
-    return _DEFAULT_GMAIL_IMAP
+    if _is_gmail_address(_mail_address()):
+        return "imap.gmail.com"
+    return _DEFAULT_HOMEPL_IMAP
 
 
 def mail_provider_label() -> str:
     smtp = get_smtp_host().lower()
     addr = _mail_address()
+    if "home.pl" in smtp or (addr and addr.endswith("@home.pl")):
+        return "home.pl"
     if _is_gmail_address(addr) or "gmail" in smtp:
         return "Gmail"
     if smtp:
@@ -292,74 +297,35 @@ def _try_create_sent_mailbox(mail: imaplib.IMAP4_SSL) -> str | None:
     return None
 
 
-def get_imap_archive_folder() -> str:
-    """Nazwa folderu IMAP na kopie wysłanych (np. etykieta Gmail „wyslane”)."""
-    raw = get_env_value(ENV_MAIL_IMAP_ARCHIVE_FOLDER).strip()
-    if raw.lower() in ("0", "off", "false", "no", "nie"):
-        return ""
-    return raw or "wyslane"
-
-
-def _resolve_named_mailbox(
-    mail: imaplib.IMAP4_SSL,
-    folder_hint: str,
-    logger: logging.Logger | None = None,
-) -> str | None:
-    mailbox_names = _imap_mailbox_names(mail)
-    if logger and mailbox_names:
-        logger.debug("IMAP foldery: %s", ", ".join(mailbox_names[:20]))
-
-    preferred = (
-        folder_hint,
-        f"[Gmail]/{folder_hint}",
-        f"INBOX.{folder_hint}",
-        f"INBOX/{folder_hint}",
-    )
-    lowered = {m.lower(): m for m in mailbox_names}
-    for candidate in preferred:
-        found = lowered.get(candidate.lower())
-        if found:
-            return found
-    hint = folder_hint.lower()
-    for name in mailbox_names:
-        low = name.lower()
-        if low == hint or low.endswith(f"/{hint}") or low.endswith(f".{hint}"):
-            return name
-    return None
-
-
-def _try_create_named_mailbox(mail: imaplib.IMAP4_SSL, folder_hint: str) -> str | None:
-    for candidate in (
-        folder_hint,
-        f"INBOX.{folder_hint}",
-        f"[Gmail]/{folder_hint}",
-    ):
-        try:
-            typ, _ = mail.create(candidate)
-            if typ == "OK":
-                return candidate
-        except Exception:
-            continue
-    return None
-
-
-def _imap_append_message(
+def _append_to_imap_sent(
     username: str,
     password: str,
     msg: EmailMessage,
     logger: logging.Logger,
-    mailbox: str,
-    *,
-    log_label: str,
 ) -> bool:
+    """Dopisz wysłaną wiadomość do folderu Wysłane na serwerze IMAP."""
+    if not _truthy(get_env_value(ENV_MAIL_ARCHIVE_IMAP) or "1"):
+        return True
     imap_host = get_imap_host()
     if not imap_host:
-        logger.warning("Brak IMAP_HOST — pominięto zapis do folderu %s.", log_label)
+        logger.warning("Brak IMAP_HOST — pominięto zapis do folderu Wysłane na serwerze.")
         return False
 
     mail = imaplib.IMAP4_SSL(imap_host, _imap_port())
     try:
         mail.login(username, password)
+        mailbox = _resolve_sent_mailbox(mail, logger)
+        if not mailbox:
+            mailbox = _try_create_sent_mailbox(mail)
+        if not mailbox:
+            names = _imap_mailbox_names(mail)
+            logger.warning(
+                "Nie znaleziono folderu Wysłane/Sent na IMAP (dostępne: %s). "
+                "Kopia jest w folderze lokalnym: %s",
+                ", ".join(names[:12]) or "(brak listy)",
+                get_wyslane_dir(),
+            )
+            return False
         payload = msg.as_bytes()
         typ, data = mail.append(
             mailbox,
@@ -375,12 +341,11 @@ def _imap_append_message(
                 data,
             )
             return False
-        logger.info("Zapisano kopię w folderze IMAP %s: %s", log_label, mailbox)
+        logger.info("Zapisano kopię w folderze Wysłane (IMAP): %s", mailbox)
         return True
     except Exception as e:
         logger.warning(
-            "Błąd zapisu do folderu %s (IMAP %s): %s — kopia lokalna: %s",
-            log_label,
+            "Błąd zapisu do folderu Wysłane (IMAP %s): %s — kopia lokalna: %s",
             imap_host,
             e,
             get_wyslane_dir(),
@@ -391,123 +356,6 @@ def _imap_append_message(
             mail.logout()
         except Exception:
             pass
-
-
-def _append_to_imap_mailbox(
-    username: str,
-    password: str,
-    msg: EmailMessage,
-    logger: logging.Logger,
-    *,
-    folder_hint: str,
-    resolve_fn,
-    create_fn,
-    log_label: str,
-) -> bool:
-    imap_host = get_imap_host()
-    if not imap_host:
-        logger.warning("Brak IMAP_HOST — pominięto zapis do folderu %s.", log_label)
-        return False
-
-    mail = imaplib.IMAP4_SSL(imap_host, _imap_port())
-    try:
-        mail.login(username, password)
-        mailbox = resolve_fn(mail, logger)
-        if not mailbox:
-            mailbox = create_fn(mail)
-        if not mailbox:
-            names = _imap_mailbox_names(mail)
-            logger.warning(
-                "Nie znaleziono folderu %s na IMAP (dostępne: %s). "
-                "Kopia jest w folderze lokalnym: %s",
-                log_label,
-                ", ".join(names[:12]) or "(brak listy)",
-                get_wyslane_dir(),
-            )
-            return False
-    finally:
-        try:
-            mail.logout()
-        except Exception:
-            pass
-    return _imap_append_message(
-        username, password, msg, logger, mailbox, log_label=log_label
-    )
-
-
-def _append_to_imap_sent(
-    username: str,
-    password: str,
-    msg: EmailMessage,
-    logger: logging.Logger,
-) -> bool:
-    """Dopisz wysłaną wiadomość do folderu Wysłane na serwerze IMAP."""
-    if not _truthy(get_env_value(ENV_MAIL_ARCHIVE_IMAP) or "1"):
-        return True
-
-    def _resolve(mail: imaplib.IMAP4_SSL, log: logging.Logger | None) -> str | None:
-        return _resolve_sent_mailbox(mail, log)
-
-    return _append_to_imap_mailbox(
-        username,
-        password,
-        msg,
-        logger,
-        folder_hint="Sent",
-        resolve_fn=_resolve,
-        create_fn=_try_create_sent_mailbox,
-        log_label="Wysłane",
-    )
-
-
-def _should_append_imap_archive(username: str) -> bool:
-    if not _truthy(get_env_value(ENV_MAIL_ARCHIVE_IMAP) or "1"):
-        return False
-    if not get_imap_archive_folder():
-        return False
-    # Gmail: SMTP zapisuje w Wysłanych; IMAP APPEND do „wyslane” daje drugą kopię w wątku
-    # (inna Message-ID i często inny nagłówek From niż yagmail).
-    if _is_gmail_address(username):
-        return False
-    return True
-
-
-def _append_to_imap_archive(
-    username: str,
-    password: str,
-    msg: EmailMessage,
-    logger: logging.Logger,
-) -> bool:
-    """Dopisz kopię do folderu archiwum (np. etykieta Gmail „wyslane”)."""
-    folder_hint = get_imap_archive_folder()
-    if not folder_hint:
-        return True
-
-    def _resolve(mail: imaplib.IMAP4_SSL, log: logging.Logger | None) -> str | None:
-        return _resolve_named_mailbox(mail, folder_hint, log)
-
-    def _create(mail: imaplib.IMAP4_SSL) -> str | None:
-        return _try_create_named_mailbox(mail, folder_hint)
-
-    return _append_to_imap_mailbox(
-        username,
-        password,
-        msg,
-        logger,
-        folder_hint=folder_hint,
-        resolve_fn=_resolve,
-        create_fn=_create,
-        log_label=folder_hint,
-    )
-
-
-def _should_append_imap_sent(username: str) -> bool:
-    """Gmail zapisuje wysłane po SMTP — IMAP APPEND dawałby duplikat w Wysłanych."""
-    if not _truthy(get_env_value(ENV_MAIL_ARCHIVE_IMAP) or "1"):
-        return False
-    if _is_gmail_address(username):
-        return False
-    return True
 
 
 def archive_sent_message(
@@ -521,7 +369,7 @@ def archive_sent_message(
     attachment_paths: list[str] | None = None,
 ) -> None:
     """
-    Po udanej wysyłce SMTP: kopia .eml w folderze wyslane/ + IMAP (Wysłane lub folder archiwum).
+    Po udanej wysyłce SMTP: kopia .eml w folderze wyslane/ oraz dopisanie do IMAP Wysłane.
     """
     username = get_mail_user()
     password = get_mail_password()
@@ -541,19 +389,8 @@ def archive_sent_message(
         logger.info("Kopia wysłanego maila (folder wyslane): %s", local_path)
     except Exception as e:
         logger.warning("Nie zapisano kopii w folderze wyslane: %s", e)
-    if password and _should_append_imap_sent(username):
+    if password:
         _append_to_imap_sent(username, password, msg, logger)
-    elif password and _is_gmail_address(username):
-        logger.info(
-            "Gmail: pominięto IMAP APPEND do Wysłane (SMTP już zapisuje w skrzynce)."
-        )
-    if password and _should_append_imap_archive(username):
-        _append_to_imap_archive(username, password, msg, logger)
-    elif password and _is_gmail_address(username) and get_imap_archive_folder():
-        logger.info(
-            "Gmail: pominięto IMAP APPEND do %s (unikamy duplikatu w Wysłanych; kopia lokalna .eml).",
-            get_imap_archive_folder(),
-        )
 
 
 def archive_sent_email_message(
@@ -565,7 +402,7 @@ def archive_sent_email_message(
     attachment_paths: list[str] | None = None,
 ) -> None:
     """
-    Po SMTP: kopia .eml (wyslane/) + IMAP (Wysłane lub folder archiwum).
+    Po SMTP: kopia .eml (wyslane/) + ten sam Message do folderu Wysłane (IMAP).
     Użyj tej samej instancji msg co wysłano — widać Cc, załącznik i treść w skrzynce.
     """
     username = get_mail_user()
@@ -578,25 +415,19 @@ def archive_sent_email_message(
     except Exception as e:
         logger.warning("Nie zapisano kopii w folderze wyslane: %s", e)
     if not password:
-        logger.warning("Brak MAIL_PASSWORD — pominięto zapis IMAP.")
+        logger.warning("Brak MAIL_PASSWORD — pominięto zapis IMAP Wysłane.")
         return
-    if _should_append_imap_sent(username):
-        ok = _append_to_imap_sent(username, password, msg, logger)
-        if not ok:
-            logger.warning(
-                "Sprawdź IMAP_HOST (%s) i folder Wysłane/Sent w webmailu.",
-                get_imap_host(),
-            )
-    elif _is_gmail_address(username):
-        logger.info(
-            "Gmail: pominięto IMAP APPEND do Wysłane (SMTP już zapisuje w skrzynce)."
+    if not _truthy(get_env_value(ENV_MAIL_ARCHIVE_IMAP) or "1"):
+        logger.warning(
+            "MAIL_ARCHIVE_IMAP=0 — wiadomość nie trafi do folderu Wysłane na serwerze. "
+            "Ustaw MAIL_ARCHIVE_IMAP=1 w .env."
         )
-    if _should_append_imap_archive(username):
-        _append_to_imap_archive(username, password, msg, logger)
-    elif _is_gmail_address(username) and get_imap_archive_folder():
-        logger.info(
-            "Gmail: pominięto IMAP APPEND do %s (unikamy duplikatu w Wysłanych; kopia lokalna .eml).",
-            get_imap_archive_folder(),
+        return
+    ok = _append_to_imap_sent(username, password, msg, logger)
+    if not ok:
+        logger.warning(
+            "Sprawdź IMAP_HOST (%s) i folder Wysłane/Sent w webmailu.",
+            get_imap_host(),
         )
 
 
@@ -674,9 +505,6 @@ def send_smtp_email(
             kwargs["cc"] = cc_list
         if attach_files:
             kwargs["attachments"] = attach_files
-        sender_name = _sanitize_sender_name(get_mail_sender_name())
-        if sender_name:
-            kwargs["headers"] = {"From": f"{sender_name} <{username}>"}
         yag.send(**kwargs)
         archive_sent_message(
             to_email,

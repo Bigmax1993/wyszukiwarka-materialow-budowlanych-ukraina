@@ -13,7 +13,6 @@ jobs:
     env:
       KANBUD_PROJECT_ROOT: ${{ github.workspace }}/libs
       PYTHONUTF8: "1"
-      UA_REGIONAL_INQUIRY_EMAIL_FROM: "2026-07-13"
     steps:
       - uses: actions/checkout@v4
 
@@ -30,11 +29,19 @@ jobs:
           python -m py_compile campaign_data_paths.py
           python -m py_compile ua_materialy_scraper.py
           python -m py_compile ua_oblast_keywords.py
-          python -m py_compile ua_sync_replies_and_reminders.py
-          python -m py_compile libs/email_reply_intelligence.py
+          python -m py_compile ua_materialy_inquiry_email_uk.py
+          python -m py_compile pl_materialy_scraper.py
+          python -m py_compile pl_wojewodztwo_keywords.py
+          python -m py_compile pl_materialy_inquiry_email_pl.py
+          python -m py_compile pl_claude_prompts.py
+          python -m py_compile pl_claude_contact_extract.py
+          python -m py_compile contact_extract_utils.py
 
       - name: Scraper smoke UA materialy (--test)
         run: python ua_materialy_scraper.py --test
+
+      - name: Scraper smoke PL materialy (--test)
+        run: python pl_materialy_scraper.py --test
 
       - name: Regresja i testy UA (pytest + unittest)
         run: |
@@ -43,15 +50,18 @@ jobs:
             tests/test_ua_oblast_keywords.py \
             tests/test_ua_inquiry_email_uk.py \
             tests/test_ua_claude_inquiry_email.py \
-            tests/test_ua_claude_inquiry_email_mock_api.py \
             tests/test_ua_supplier_filter.py \
             tests/test_ua_materialy_integration.py \
-            tests/test_ua_email_targeting.py \
-            tests/test_ua_claude_contact_extract.py \
-            tests/test_ua_contact_pipeline_integration.py \
-            tests/test_ua_reminder_email.py \
-            tests/test_repo_isolation.py \
-            tests/test_website_full_crawl.py \
-            tests/test_http_page_guard.py \
-            tests/test_ua_excel_pl.py \
+            -q
+
+      - name: Regresja i testy PL (pytest + unittest)
+        run: |
+          python -m unittest tests.test_pl_materialy_regression -v
+          python -m pytest \
+            tests/test_pl_inquiry_email_pl.py \
+            tests/test_pl_materialy_integration.py \
+            tests/test_pl_claude_contact_extract.py \
+            tests/test_pl_claude_prompts.py \
+            tests/test_pl_cache.py \
+            tests/test_contact_extract_utils_pl.py \
             -q

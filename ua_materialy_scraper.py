@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Serper API – UA: hurtownie / składy / producenci materiałów budowlanych (GU), którzy stawiają sklepy/markety (Neubau, Filialbau)
 lub robią przebudowy/umbau i modernizację filii (Rewe, Aldi, Kaufland, Netto, Penny, Edeka).
@@ -226,7 +226,6 @@ from email_targeting import (
     AGGREGATOR_EMAIL_DOMAINS,
     MIN_EMAIL_SCORE_FOR_SEND,
     get_registrable_domain,
-    is_public_portal_url,
     is_unsuitable_inquiry_email,
 )
 from ua_email_targeting import (
@@ -427,15 +426,15 @@ SUPPRESSED_EMAIL_LOCALPARTS = {
     "postmaster",
 }
 EXPORT_COLUMNS = [
-    "Nazwa firmy",
-    "Adres",
+    "Firmenname",
+    "Adresse",
     "Obwód",
     "Telefon",
-    "E-mail",
-    "Strona www",
-    "Kategoria materiałów",
-    "WWW sprawdzone",
-    "Mała firma",
+    "E-Mail",
+    "Webseite",
+    "Kategorie_materialow",
+    "WWW_geprueft",
+    "Kleinunternehmen",
 ]
 UA_OBLASTS = [
     "Kyiv", "Kyivska", "Lvivska", "Odeska", "Kharkivska", "Dnipropetrovska",
@@ -760,7 +759,7 @@ def build_excel_info_sheet_rows() -> list[dict]:
         },
         {
             "Temat": "Arkusze",
-            "Wartość": "Info (ten arkusz) | Kontakty (firmy) | Obwody (podsumowanie obwodów)",
+            "Wartość": "Info (ten arkusz) | Kontakte (firmy) | Wojewodztwa (podsumowanie landów)",
         },
         {
             "Temat": "Cache JSON",
@@ -772,9 +771,7 @@ def build_excel_info_sheet_rows() -> list[dict]:
     ]
 
 
-def save_excel(
-    rows, path: Path, logger: logging.Logger, cache=None, require_eligible=True
-) -> None:
+def save_excel(rows, path: Path, logger: logging.Logger, cache=None) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     try:
         rows_for_excel = rows
@@ -792,10 +789,7 @@ def save_excel(
                 for r in rows
             ]
         export_rows = build_export_rows(
-            rows_for_excel,
-            logger=logger,
-            cache=cache,
-            require_eligible=require_eligible,
+            rows_for_excel, logger=logger, cache=cache
         )
         state_rows = build_bundesland_rows(rows_for_excel)
         if cache is None:
@@ -805,15 +799,14 @@ def save_excel(
             xlsx_path=path,
             lang="uk",
             campaign_id="ua_materialy",
-            main_sheet_names=("Kontakty", "Kontakte"),
         )
         try:
             write_excel_with_reply_styles(
                 path,
                 {
                     "Info": build_excel_info_sheet_rows(),
-                    "Kontakty": export_rows,
-                    "Obwody": state_rows,
+                    "Kontakte": export_rows,
+                    "Wojewodztwa": state_rows,
                 },
                 cache,
                 cfg,
@@ -832,14 +825,13 @@ def save_excel(
                 xlsx_path=alt,
                 lang="uk",
                 campaign_id="ua_materialy",
-                main_sheet_names=("Kontakty", "Kontakte"),
             )
             write_excel_with_reply_styles(
                 alt,
                 {
                     "Info": build_excel_info_sheet_rows(),
-                    "Kontakty": export_rows,
-                    "Obwody": state_rows,
+                    "Kontakte": export_rows,
+                    "Wojewodztwa": state_rows,
                 },
                 cache,
                 cfg_alt,
@@ -986,9 +978,7 @@ def handle_serper_api_failure(
 
 # Faza 6: e.K. / GbR — małe GU bez GmbH (bez fałszywego trafienia e.Kfm.)
 _COMPANY_LEGAL_FORM_PATTERN = (
-    r"(?:"
-    r"ТОВ|ПП|ФОП|ПАТ|ПрАТ|ДП|КП|СПД|"
-    r"GmbH|UG(?:\s*\(haftungsbeschränkt\))?|AG|"
+    r"(?:GmbH|UG(?:\s*\(haftungsbeschränkt\))?|AG|"
     r"GbR\.?|"
     r"e\.?\s*K\.(?=\s|$)|"
     r"e\.?\s*K(?=\s|$)|"
@@ -1061,18 +1051,6 @@ _COMPANY_NAME_HARD_REJECT_MARKERS = (
     "microsoft",
     "word ",
     "excel ",
-    "service unavailable",
-    "advanced search",
-    "грн/м",
-    "грн/кг",
-    "від ",
-    "купити ",
-    "купить ",
-    "лидери продаж",
-    "лідери продаж",
-    "асортимент інтернет",
-    "advanced search",
-    "unavailable",
 )
 
 _COMPANY_NAME_SOFT_REJECT_IF_NO_LEGAL_FORM = (
@@ -1117,8 +1095,6 @@ def is_rejected_company_name_for_export(
     low = text.lower()
     if re.match(r"^[\W\d_]+$", text):
         return True
-    if _looks_like_domain_label(text):
-        return True
     if any(m in low for m in _COMPANY_NAME_HARD_REJECT_MARKERS):
         return True
     if (website or "").lower().find("/pdfs/") >= 0 or (website or "").lower().endswith(".pdf"):
@@ -1141,11 +1117,6 @@ def is_rejected_company_name_for_export(
         )
     ):
         return True
-    if website and _name_aligns_with_domain(text, website):
-        if any(m in low for m in _COMPANY_NAME_HARD_REJECT_MARKERS):
-            return True
-        if len(text) >= 4:
-            return False
     if not _company_name_has_legal_form(text):
         if any(m in low for m in _COMPANY_NAME_SOFT_REJECT_IF_NO_LEGAL_FORM):
             return True
@@ -1163,10 +1134,25 @@ def finalize_company_name_for_export(
     website: str = "",
     email: str = "",
 ) -> str:
-    """Nazwa firmy wyłącznie z domeny (LLM i Serper są ignorowane)."""
-    _ = llm_name, fallback_raw, email
+    """Nach LLM-Cleanup: nur Name+Rechtsform, sonst Impressum/Domain-Fallback."""
     website = website_base_url(website) if website else ""
-    return derive_name_from_website(website)
+    candidates: list[str] = []
+    if should_prefer_domain_company_name(fallback_raw, website):
+        candidates.append(derive_name_from_website(website))
+    candidates.extend(
+        (
+            sanitize_special_text(llm_name or ""),
+            clean_company_name(fallback_raw, website),
+            derive_name_from_website(website),
+        )
+    )
+    for candidate in candidates:
+        name = " ".join((candidate or "").split()).strip(" :|–—")
+        if not name or is_rejected_company_name_for_export(name, website, email):
+            continue
+        if _company_name_has_legal_form(name):
+            return name
+    return ""
 
 
 def build_claude_row_cleanup_prompt(
@@ -1197,11 +1183,9 @@ def build_claude_row_cleanup_prompt(
 def row_cleanup_fallback(
     row: dict, company: str, address: str, phone: str, email: str, website: str
 ) -> dict:
-    _ = company
     bundesland = extract_bundesland(row)
-    domain_name = derive_name_from_website(website_base_url(website))
     return {
-        "company_name_clean": domain_name,
+        "company_name_clean": company,
         "address": address,
         "phone": phone,
         "email": email,
@@ -1212,7 +1196,10 @@ def row_cleanup_fallback(
 
 
 def apply_row_enrichment_to_row(row: dict, llm_result: dict) -> None:
-    """LLM czyści adres/telefon — nazwa firmy zawsze z domeny."""
+    """LLM czyści nazwę/adres/telefon — e-mail zostaje z pick_best kontaktów."""
+    company = llm_result.get("company_name_clean") or row.get("nazwa") or ""
+    row["company_name_clean"] = company
+    row["nazwa"] = company
     row["adres"] = llm_result.get("address", row.get("adres", ""))
     row["full_address"] = row["adres"]
     row["telefon"] = llm_result.get("phone", row.get("telefon", ""))
@@ -1226,7 +1213,6 @@ def apply_row_enrichment_to_row(row: dict, llm_result: dict) -> None:
         )
     if llm_result.get("url"):
         row["url"] = website_base_url(llm_result.get("url")) or row.get("url", "")
-    apply_domain_company_name_to_row(row)
 
 
 def format_handelsketten_for_excel(raw: str) -> str:
@@ -1261,7 +1247,6 @@ def finalize_row_for_excel_tables(row: dict) -> dict:
     )
     if row.get("bundesland") not in UA_OBLASTS:
         row["bundesland"] = extract_bundesland(row)
-    apply_domain_company_name_to_row(row)
     return row
 
 
@@ -1271,14 +1256,14 @@ def row_to_excel_kontakte_columns(row: dict, email: str = "") -> dict:
     mail = (email or row.get("email_target") or "").strip()
     website = (row.get("official_website") or row.get("www") or "").strip()
     return {
-        "Nazwa firmy": company_name_from_row_domain(row),
+        "Nazwa firmy": (row.get("company_name_clean") or row.get("nazwa") or "").strip(),
         "Adres": (row.get("adres") or row.get("full_address") or "").strip(),
         "Obwód": (row.get("bundesland") or row.get("discovery_bundesland") or "").strip(),
         "Telefon": (row.get("telefon") or "").strip(),
         "E-mail": mail,
         "Strona www": website,
         "URL": (row.get("url") or website_base_url(website) or "").strip(),
-        "Kategoria materiałów": (row.get("retail_chains_found") or "").strip(),
+        "Kategorie_materialow": (row.get("retail_chains_found") or "").strip(),
     }
 
 
@@ -1286,7 +1271,7 @@ def row_to_excel_wojewodztwa_columns(row: dict) -> dict:
     """Mapuje wiersz pipeline na kolumny arkusza Wojewodztwa."""
     row = finalize_row_for_excel_tables(dict(row))
     return {
-        "Nazwa firmy": company_name_from_row_domain(row),
+        "Nazwa firmy": (row.get("company_name_clean") or row.get("nazwa") or "").strip(),
         "Obwód": (row.get("bundesland") or row.get("discovery_bundesland") or "").strip(),
         "Adres": (row.get("adres") or row.get("full_address") or "").strip(),
         "Strona www": (row.get("official_website") or row.get("www") or "").strip(),
@@ -1371,17 +1356,16 @@ def enrich_row_with_claude_cleanup(row: dict, logger: logging.Logger, cache: dic
         row = apply_regex_row_contact_cleanup(row)
         return finalize_row_for_excel_tables(row)
 
-    llm_name = sanitize_special_text(parsed.get("company_name_clean", ""))
     cleaned_name = finalize_company_name_for_export(
-        llm_name,
+        parsed.get("company_name_clean", ""),
         fallback_raw=company,
         website=website,
         email=email,
     )
     claude_result = {
         "company_name_clean": cleaned_name,
-        "address": sanitize_special_text(parsed.get("address", "")),
-        "phone": sanitize_special_text(parsed.get("phone", "")),
+        "address": sanitize_special_text(parsed.get("address", address)) or address,
+        "phone": sanitize_special_text(parsed.get("phone", phone)) or phone,
         "website": sanitize_special_text(parsed.get("website", website)) or website,
         "bundesland": sanitize_special_text(parsed.get("bundesland", "")),
         "handelsketten": format_handelsketten_for_excel(
@@ -1486,11 +1470,11 @@ def is_row_eligible_for_excel_export(row: dict) -> bool:
     return False
 
 
-def build_export_rows(rows, logger=None, cache=None, require_eligible=True):
+def build_export_rows(rows, logger=None, cache=None):
     export_rows = []
     for row in rows:
         row = normalize_row_company_name(row)
-        if require_eligible and not is_row_eligible_for_excel_export(row):
+        if not is_row_eligible_for_excel_export(row):
             continue
         email = (row.get("email_target") or "").strip()
         if not email:
@@ -1517,10 +1501,10 @@ def build_export_rows(rows, logger=None, cache=None, require_eligible=True):
             table_cols = row_to_excel_kontakte_columns(row, email)
         base = {
             **table_cols,
-            "WWW sprawdzone": "tak" if row.get("retail_verified") else "nie",
-            "Mała firma": "tak" if row.get("is_small_firm") else "nie",
-            "Generalny wykonawca": "tak" if row.get("is_gu") or _row_has_gu_signal(row) else "nie",
-            "Znacznik GW": (row.get("gu_marker") or "").strip(),
+            "WWW_geprueft": "ja" if row.get("retail_verified") else "nein",
+            "Kleinunternehmen": "ja" if row.get("is_small_firm") else "nein",
+            "GU": "ja" if row.get("is_gu") or _row_has_gu_signal(row) else "nein",
+            "GU_Marker": (row.get("gu_marker") or "").strip(),
             "Status": _excel_status_label(row),
         }
         if cache is not None and email:
@@ -1576,18 +1560,13 @@ EXCEL_IMPORT_COLUMNS = {
     "E-mail": "email_target",
     "Strona www": "www",
     "URL": "url",
-    "Znacznik GW": "gu_marker",
     "GU_Marker": "gu_marker",
     "Status": "email_status",
-    "Kategoria materiałów": "retail_chains_found",
 }
 
 
 def row_from_excel_record(rec: dict) -> dict:
-    """Mapuje polskie (i stare DE) nagłówki z Excela na pola wewnętrzne scrapera."""
-    from ua_excel_pl import normalize_record, polish_flag_value
-
-    rec = normalize_record(rec)
+    """Mapuje polskie nagłówki z Excela na pola wewnętrzne scrapera."""
     row: dict = {}
     for col_pl, field in EXCEL_IMPORT_COLUMNS.items():
         for key in (col_pl, field):
@@ -1598,32 +1577,32 @@ def row_from_excel_record(rec: dict) -> dict:
     name = (row.get("nazwa") or "").strip()
     if name:
         row["company_name_raw"] = name
+        row["company_name_clean"] = name
     if row.get("adres"):
         row["full_address"] = row["adres"]
     if row.get("telefon"):
         row["phones_found"] = row["telefon"]
     if row.get("www"):
         row["official_website"] = row["www"]
-    apply_domain_company_name_to_row(row)
-    www_checked = polish_flag_value(rec.get("WWW sprawdzone") or rec.get("WWW_geprueft"))
-    if www_checked == "tak":
+    www_checked = str(rec.get("WWW_geprueft") or "").strip().lower()
+    if www_checked == "ja":
         row["retail_verified"] = True
-    elif www_checked == "nie":
+    elif www_checked == "nein":
         row["retail_verified"] = False
         if not (row.get("email_target") or "").strip():
             row["verification_reason"] = PENDING_WWW_VERIFY_REASON
             row["email_status"] = "pending_www_verify"
-    gu_col = polish_flag_value(rec.get("Generalny wykonawca") or rec.get("GU"))
-    if gu_col == "tak":
+    gu_col = str(rec.get("GU") or "").strip().lower()
+    if gu_col == "ja":
         row["is_gu"] = True
-    elif gu_col == "nie":
+    elif gu_col == "nein":
         row["is_gu"] = False
-    small_col = polish_flag_value(rec.get("Mała firma") or rec.get("Kleinunternehmen"))
-    if small_col == "tak":
+    small_col = str(rec.get("Kleinunternehmen") or "").strip().lower()
+    if small_col == "ja":
         row["is_small_firm"] = True
-    elif small_col == "nie":
+    elif small_col == "nein":
         row["is_small_firm"] = False
-    chains = str(rec.get("Kategoria materiałów") or rec.get("Kategorie_materialow") or "").strip()
+    chains = str(rec.get("Kategorie_materialow") or "").strip()
     if chains:
         row["retail_chains_found"] = chains
     return row
@@ -1657,12 +1636,9 @@ def load_existing_output(path: Path, logger: logging.Logger):
         import pandas as pd  # pyright: ignore[reportMissingImports]
 
         try:
-            df = pd.read_excel(path, sheet_name="Kontakty")
+            df = pd.read_excel(path, sheet_name="Kontakte")
         except Exception:
-            try:
-                df = pd.read_excel(path, sheet_name="Kontakte")
-            except Exception:
-                df = pd.read_excel(path)
+            df = pd.read_excel(path)
         raw_records = df.fillna("").to_dict(orient="records")
         rows = []
         for rec in raw_records:
@@ -2086,7 +2062,6 @@ def pipeline_row_to_contact_info(row: dict) -> dict:
             "contact_quality_score": int(row.get("contact_quality_score", 0) or 0),
             "full_address": (row.get("full_address") or row.get("adres") or "").strip(),
             "bundesland": (row.get("bundesland") or "").strip(),
-            "discovery_bundesland": (row.get("discovery_bundesland") or "").strip(),
         }.items()
         if v not in ("", None) or k in (
             "retail_verified",
@@ -2339,15 +2314,10 @@ def sanitize_generated_email(subject: str, body: str, company_name: str):
     for term in EMAIL_SPAMMY_TERMS:
         if term in lowered_body:
             clean_body = re.sub(term, "", clean_body, flags=re.IGNORECASE)
-    from ua_materialy_inquiry_email_uk import (
-        format_inquiry_email_body_uk,
-        strip_de_campaign_branding,
-        strip_german_phones_from_text,
-    )
+    from ua_materialy_inquiry_email_uk import strip_de_campaign_branding, strip_german_phones_from_text
 
     clean_body = strip_german_phones_from_text(clean_body)
     clean_body = strip_de_campaign_branding(clean_body)
-    clean_body = format_inquiry_email_body_uk(clean_body)
     clean_body = re.sub(r"\n{3,}", "\n\n", clean_body).strip()
     return clean_subject, clean_body
 
@@ -2476,7 +2446,7 @@ def new_discovery_funnel() -> dict:
         "raw_hits": 0,
         "filtered_serper": 0,
         "filtered_large_serper": 0,
-        "rows_saved": 0,
+        "pending_saved": 0,
         "rejected_excel": 0,
         "claude_rounds": 0,
         "claude_terms": 0,
@@ -2504,7 +2474,7 @@ def log_discovery_funnel(funnel: dict, logger: logging.Logger) -> None:
     msg = (
         "[LEjek] serper_queries={serper_queries} | api_zero={api_zero_terms} | "
         "raw_hits={raw_hits} | filtered_serper={filtered_serper} | "
-        "filtered_large={filtered_large_serper} | rows_saved={rows_saved} | "
+        "filtered_large={filtered_large_serper} | pending_saved={pending_saved} | "
         "rejected_excel={rejected_excel} | claude_rounds={claude_rounds} | "
         "claude_terms={claude_terms}"
     ).format(**funnel)
@@ -2673,61 +2643,6 @@ def count_retail_verified_for_bundesland(rows: list, land: str) -> int:
     return count
 
 
-def count_retail_verified_bundesweit(rows: list) -> int:
-    return sum(1 for row in (rows or []) if row.get("retail_verified"))
-
-
-def discovery_quality_count_for_land(
-    rows: list, cache: dict, land: str, *, use_verified: bool | None = None
-) -> int:
-    """Bramka jakości discovery: verified przy Claude www-verify, inaczej pending."""
-    if ENABLE_CLAUDE_PAGE_VERIFY if use_verified is None else use_verified:
-        return count_retail_verified_for_bundesland(rows, land)
-    return count_pending_for_bundesland(rows, cache, land)
-
-
-def discovery_quality_count_bundesweit(
-    rows: list, cache: dict, *, use_verified: bool | None = None
-) -> int:
-    if ENABLE_CLAUDE_PAGE_VERIFY if use_verified is None else use_verified:
-        return count_retail_verified_bundesweit(rows)
-    return count_all_pending_contacts(rows, cache)
-
-
-def discovery_quality_metric_label(*, use_verified: bool | None = None) -> str:
-    verified = ENABLE_CLAUDE_PAGE_VERIFY if use_verified is None else use_verified
-    return "retail_verified" if verified else PENDING_WWW_VERIFY_REASON
-
-
-def _enforce_discovery_min_quality_gate(
-    quality_count: int,
-    cache: dict,
-    *,
-    scope_label: str,
-    use_verified: bool | None = None,
-) -> None:
-    metric = discovery_quality_metric_label(use_verified=use_verified)
-    min_required = DISCOVERY_MIN_PENDING_GHA_FAIL
-    if quality_count >= min_required:
-        return
-    if is_serper_api_exhausted(cache):
-        console_step(
-            f"Serper API wyczerpane — kontynuuj z {quality_count} {metric} "
-            f"(poniżej progu {min_required}){scope_label}."
-        )
-        return
-    if is_scraper_runtime_limit_reached():
-        console_step(
-            f"Limit czasu — kontynuuj z {quality_count} {metric} "
-            f"(poniżej progu {min_required}){scope_label}."
-        )
-        return
-    raise RuntimeError(
-        f"Za mało kandydatów {metric} ({quality_count} < {min_required})"
-        f"{scope_label}. Sprawdź [LEjek] w logu."
-    )
-
-
 def request_with_retry(
     method,
     url: str,
@@ -2744,10 +2659,7 @@ def request_with_retry(
     for attempt in range(1, HTTP_RETRY_ATTEMPTS + 1):
         try:
             response = method(url, **kwargs)
-            if waf_skip and is_waf_blocked(
-                response=response,
-                html="" if kwargs.get("stream") else None,
-            ):
+            if waf_skip and is_waf_blocked(response=response):
                 reason = waf_block_reason(response=response)
                 logger.info(
                     "WAF/Cloudflare — pomijam (bez retry): %s [%s]",
@@ -2756,7 +2668,7 @@ def request_with_retry(
                 )
                 raise PageAccessBlocked(f"{safe_url}: {reason}")
             response.raise_for_status()
-            if waf_skip and not kwargs.get("stream"):
+            if waf_skip:
                 body = getattr(response, "text", "") or ""
                 if is_waf_blocked(response=response, html=body):
                     reason = waf_block_reason(response=response, html=body)
@@ -2779,12 +2691,6 @@ def request_with_retry(
                     reason,
                 )
                 raise PageAccessBlocked(f"{safe_url}: {reason}") from e
-            from http_page_guard import http_status_from_exc, should_retry_http_status
-
-            status = http_status_from_exc(e)
-            if not should_retry_http_status(status):
-                console_step(f"HTTP {status} — bez retry: {safe_url}")
-                break
             console_step(f"HTTP Retry {attempt}/{HTTP_RETRY_ATTEMPTS} {safe_url}: {e}")
             if _is_rate_limit_error(e) and not retry_on_rate_limit:
                 break
@@ -3057,16 +2963,8 @@ def sort_verification_urls(urls: list[str]) -> list[str]:
 
 
 def _fetch_page_html(url: str, logger: logging.Logger) -> str:
-    """Pobierz HTML jednej strony (requests + retry, bez binarek)."""
-    from website_full_crawl import (
-        is_skippable_asset_url,
-        read_response_html_capped,
-    )
-
+    """Pobierz HTML jednej strony (requests + retry)."""
     if not (url or "").strip().lower().startswith(("http://", "https://")):
-        return ""
-    if is_skippable_asset_url(url):
-        logger.info("Pominięto binarkę/asset: %s", sanitize_log_url(url))
         return ""
     headers = {
         "User-Agent": (
@@ -3081,19 +2979,9 @@ def _fetch_page_html(url: str, logger: logging.Logger) -> str:
             logger,
             headers=headers,
             timeout=REQUEST_TIMEOUT,
-            stream=True,
             waf_skip=True,
         )
-        html = read_response_html_capped(r)
-        if not html:
-            return ""
-        from http_page_guard import PageAccessBlocked, is_waf_blocked, waf_block_reason
-
-        if is_waf_blocked(response=r, html=html):
-            reason = waf_block_reason(response=r, html=html)
-            logger.info("Strona pominięta (WAF/Cloudflare): %s [%s]", url, reason)
-            return ""
-        return html
+        return r.text or ""
     except Exception as e:
         from http_page_guard import PageAccessBlocked
 
@@ -3160,7 +3048,6 @@ def _crawl_website_for_company(
         parse_html_page=_parse,
         normalize_website=normalize_website,
         on_step=console_step,
-        should_stop=is_scraper_runtime_limit_reached,
     )
     crawl_cache[website] = result
     console_step(
@@ -3247,10 +3134,8 @@ def _needs_claude_discovery_supplement(
     serper_only: bool,
 ) -> bool:
     if rotate_mode and serper_only:
-        quality = discovery_quality_count_for_land(
-            all_rows, cache, rotation_land or ""
-        )
-        return quality < MIN_CONTACTS_TARGET
+        pending = count_pending_for_bundesland(all_rows, cache, rotation_land or "")
+        return pending < MIN_CONTACTS_TARGET
     return not _discovery_target_reached(
         all_rows,
         total_new_rows=total_new_rows,
@@ -3305,7 +3190,7 @@ def _run_claude_discovery_supplement(
                 )
                 break
 
-        quality_before = discovery_quality_count_for_land(
+        pending_before = count_pending_for_bundesland(
             all_rows, cache, rotation_land or ""
         )
 
@@ -3356,12 +3241,11 @@ def _run_claude_discovery_supplement(
         serper_kw["total_new_rows"] = total_new_rows
         serper_kw["stop_requested"] = stop_requested
 
-        quality_after = discovery_quality_count_for_land(
+        pending_after = count_pending_for_bundesland(
             all_rows, cache, rotation_land or ""
         )
-        gain = quality_after - quality_before
-        metric = discovery_quality_metric_label()
-        console_step(f"Claude discovery runda {round_n}: +{gain} {metric}")
+        gain = pending_after - pending_before
+        console_step(f"Claude discovery runda {round_n}: +{gain} pending")
         if gain < CLAUDE_DISCOVERY_MIN_GAIN:
             console_step(
                 f"Claude discovery: zysk +{gain} < {CLAUDE_DISCOVERY_MIN_GAIN}, stop"
@@ -3645,33 +3529,6 @@ def derive_name_from_website(website: str) -> str:
     return " ".join(part.capitalize() for part in root.split())
 
 
-def row_website_for_company_name(row: dict) -> str:
-    return website_base_url(
-        (row.get("official_website") or row.get("www") or row.get("url") or "").strip()
-    )
-
-
-def company_name_from_row_domain(row: dict) -> str:
-    return derive_name_from_website(row_website_for_company_name(row))
-
-
-def apply_domain_company_name_to_row(row: dict) -> None:
-    """Nazwa firmy wyłącznie z domeny www — jedyne źródło kolumny Nazwa firmy."""
-    name = company_name_from_row_domain(row)
-    if not name:
-        return
-    raw = (
-        row.get("company_name_raw")
-        or row.get("nazwa")
-        or row.get("company_name_clean")
-        or ""
-    ).strip()
-    if raw and not row.get("company_name_raw"):
-        row["company_name_raw"] = raw
-    row["company_name_clean"] = name
-    row["nazwa"] = name
-
-
 _RETAIL_CHAIN_IN_NAME = (
     "edeka",
     "rewe",
@@ -3693,19 +3550,7 @@ def website_base_url(url: str) -> str:
     return f"https://{domain}" if domain else normalize_website(url)
 
 
-def _looks_like_domain_label(text: str) -> bool:
-    low = (text or "").strip().lower()
-    if "://" in low or low.startswith("www."):
-        return True
-    compact = low.replace(" ", "")
-    if "." not in compact:
-        return False
-    return bool(re.fullmatch(r"[\w-]+(\.[\w-]+)+", compact))
-
-
 def _name_aligns_with_domain(name: str, website: str) -> bool:
-    if _looks_like_domain_label(name):
-        return False
     domain_name = derive_name_from_website(website).lower()
     if not domain_name:
         return False
@@ -3743,13 +3588,6 @@ def should_prefer_domain_company_name(raw_name: str, website: str) -> bool:
         return True
     if not _company_name_has_legal_form(raw) and len(raw.split()) >= 3:
         return True
-    if not _company_name_has_legal_form(raw) and not _name_aligns_with_domain(raw, website):
-        if any(m in low for m in _COMPANY_NAME_HARD_REJECT_MARKERS):
-            return True
-        if re.fullmatch(r"[\w-]+(\.[\w-]+)+", low.replace(" ", "")):
-            return True
-        if len(raw) >= 4:
-            return True
     return False
 
 
@@ -3776,8 +3614,13 @@ def clean_company_name(name: str, website: str = "") -> str:
 
 def normalize_row_company_name(row: dict) -> dict:
     raw_name = (row.get("nazwa") or row.get("company_name_raw") or "").strip()
+    website_hint = website_base_url(
+        row.get("official_website") or row.get("www") or row.get("url") or ""
+    )
+    clean_name = clean_company_name(raw_name, website_hint)
     row["company_name_raw"] = raw_name
-    apply_domain_company_name_to_row(row)
+    row["company_name_clean"] = clean_name
+    row["nazwa"] = clean_name
     return row
 
 
@@ -4159,7 +4002,36 @@ def reconcile_contact_sources(row: dict, collected: dict) -> dict:
     if website_for_name:
         row["www"] = website_for_name
         row["official_website"] = website_for_name
-    apply_domain_company_name_to_row(row)
+    current = (row.get("company_name_clean") or row.get("nazwa") or "").strip()
+    if website_for_name and should_prefer_domain_company_name(current, website_for_name):
+        domain_clean = derive_name_from_website(website_for_name)
+        if domain_clean:
+            if not row.get("company_name_raw"):
+                row["company_name_raw"] = current
+            row["company_name_clean"] = domain_clean
+            row["nazwa"] = domain_clean
+    else:
+        www_company = (collected.get("company_name") or "").strip()
+        if www_company:
+            weak = (
+                not current
+                or current.lower() in ("nieznana firma", "unbekanntes unternehmen")
+                or len(current) < 6
+                or any(
+                    x in current.lower() for x in ("http://", "https://", "pdf", "11880")
+                )
+            )
+            if weak or (
+                re.search(_COMPANY_LEGAL_SUFFIX, www_company, re.IGNORECASE)
+                and not re.search(_COMPANY_LEGAL_SUFFIX, current, re.IGNORECASE)
+            ):
+                clean = clean_company_name(
+                    www_company, website_for_name or website or row.get("www") or ""
+                )
+                row["company_name_clean"] = clean
+                row["nazwa"] = clean
+                if not row.get("company_name_raw"):
+                    row["company_name_raw"] = current or www_company
     return row
 
 
@@ -4531,13 +4403,12 @@ def discover_places_with_serper(
                     ) + 1
                 continue
             seen.add(link)
-            domain_name = derive_name_from_website(link)
             rows.append(
                 {
                     "fraza": term,
-                    "nazwa": domain_name,
+                    "nazwa": company_clean,
                     "company_name_raw": (item.get("title") or "").strip(),
-                    "company_name_clean": domain_name,
+                    "company_name_clean": clean_company_name(item.get("title", ""), link),
                     "ocena": "",
                     "liczba_opinii": "",
                     "kategoria": term,
@@ -5163,10 +5034,7 @@ def generate_email_content(
 ):
     """Spersonalizowany mail UA przez Claude (unikalny per firma)."""
     from email_custom_template import inquiry_try_custom
-    from scraper_env import require_claude_inquiry_email
     from ua_claude_inquiry_email import claude_generate_inquiry_email_ua
-
-    claude_required = require_claude_inquiry_email()
 
     display_name = (
         (contact_info or {}).get("company_name_clean")
@@ -5205,18 +5073,11 @@ def generate_email_content(
             cache_key=place_url or (contact_info or {}).get("url") or "",
             style_hint=style,
             on_step=console_step,
-            require=claude_required,
         )
         if generated:
             subject, body = generated
             console_step(f"E-mail: Claude UA (personalizowany) → {display_name}")
             return sanitize_generated_email(subject, body, display_name)
-
-    if claude_required:
-        raise RuntimeError(
-            f"Claude inquiry email wymagany (REQUIRE_CLAUDE_INQUIRY_EMAIL), "
-            f"ale niedostępny dla {display_name}"
-        )
 
     console_step(f"E-mail: stały szablon UA (fallback) → {display_name}")
     return subject_hint, _assemble_inquiry_email_body(display_name)
@@ -5367,19 +5228,11 @@ def _process_email_jobs(
             continue
         if force_resend:
             cache.setdefault("email_suppression", {}).pop(target.lower(), None)
-            from ua_claude_inquiry_email import invalidate_claude_inquiry_email_cache
-
-            invalidate_claude_inquiry_email_cache(
-                cache,
-                contact_info=contact_info,
-                cache_key=mail.get("place_url") or "",
-                company_name=mail.get("company_name", "Firma"),
-            )
         subject, body = generate_email_content(
             mail.get("company_name", "Firma"),
             logger,
             cache=cache,
-            contact_info=contact_info,
+            contact_info=cache.get("contacts", {}).get(mail.get("place_url"), {}),
             place_url=mail.get("place_url") or "",
         )
         if dry_run_email:
@@ -5870,7 +5723,7 @@ def _process_serper_terms(
                 added += 1
                 total_new_rows += 1
                 if serper_only and funnel is not None:
-                    funnel["rows_saved"] = funnel.get("rows_saved", 0) + 1
+                    funnel["pending_saved"] = funnel.get("pending_saved", 0) + 1
             if max_new_rows is not None and total_new_rows >= max_new_rows:
                 stop_requested = True
             persist_progress(all_rows, cache, logger, reason=f"serper +{total_new_rows}")
@@ -6193,54 +6046,56 @@ def run_scraper(
                     f"(cel {MIN_CONTACTS_TARGET}). Land zostaje do kolejnego tygodnia."
                 )
             elif rotate_mode and serper_only:
-                rotation_land_name = rotation_land or ""
                 pending_land = count_pending_for_bundesland(
-                    all_rows, cache, rotation_land_name
-                )
-                verified_land = count_retail_verified_for_bundesland(
-                    all_rows, rotation_land_name
-                )
-                quality_land = discovery_quality_count_for_land(
-                    all_rows, cache, rotation_land_name
+                    all_rows, cache, rotation_land or ""
                 )
                 log_discovery_funnel(funnel, logger)
-                if ENABLE_CLAUDE_PAGE_VERIFY:
-                    console_step(
-                        f"Serper-only: {total_new_rows} nowych, "
-                        f"{verified_land} verified, {pending_land} pending "
-                        f"dla {rotation_land_name}."
-                    )
-                else:
-                    console_step(
-                        f"Serper-only: {total_new_rows} nowych, "
-                        f"{pending_land} pending dla {rotation_land_name} "
-                        f"({PENDING_WWW_VERIFY_REASON})."
-                    )
-                _enforce_discovery_min_quality_gate(
-                    quality_land,
-                    cache,
-                    scope_label=f" dla {rotation_land_name}",
+                console_step(
+                    f"Serper-only: {total_new_rows} nowych, "
+                    f"{pending_land} pending dla {rotation_land} "
+                    f"({PENDING_WWW_VERIFY_REASON})."
                 )
+                if pending_land < DISCOVERY_MIN_PENDING_GHA_FAIL:
+                    if is_serper_api_exhausted(cache):
+                        console_step(
+                            f"Serper API wyczerpane — kontynuuj z {pending_land} pending "
+                            f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
+                        )
+                    elif is_scraper_runtime_limit_reached():
+                        console_step(
+                            f"Limit czasu — kontynuuj z {pending_land} pending "
+                            f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
+                        )
+                    else:
+                        raise RuntimeError(
+                            f"Za mało kandydatów pending ({pending_land} < "
+                            f"{DISCOVERY_MIN_PENDING_GHA_FAIL}) dla {rotation_land}. "
+                            "Sprawdź [LEjek] w logu."
+                        )
             elif serper_only:
                 pending_all = count_all_pending_contacts(all_rows, cache)
-                verified_all = count_retail_verified_bundesweit(all_rows)
-                quality_all = discovery_quality_count_bundesweit(all_rows, cache)
                 log_discovery_funnel(funnel, logger)
-                if ENABLE_CLAUDE_PAGE_VERIFY:
-                    console_step(
-                        f"Serper-only bundesweit: {total_new_rows} nowych, "
-                        f"{verified_all} verified, {pending_all} pending."
-                    )
-                else:
-                    console_step(
-                        f"Serper-only bundesweit: {total_new_rows} nowych, "
-                        f"{pending_all} pending ({PENDING_WWW_VERIFY_REASON})."
-                    )
-                _enforce_discovery_min_quality_gate(
-                    quality_all,
-                    cache,
-                    scope_label=" w całej kampanii",
+                console_step(
+                    f"Serper-only bundesweit: {total_new_rows} nowych, "
+                    f"{pending_all} pending ({PENDING_WWW_VERIFY_REASON})."
                 )
+                if pending_all < DISCOVERY_MIN_PENDING_GHA_FAIL:
+                    if is_serper_api_exhausted(cache):
+                        console_step(
+                            f"Serper API wyczerpane — kontynuuj z {pending_all} pending "
+                            f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
+                        )
+                    elif is_scraper_runtime_limit_reached():
+                        console_step(
+                            f"Limit czasu — kontynuuj z {pending_all} pending "
+                            f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
+                        )
+                    else:
+                        raise RuntimeError(
+                            f"Za mało kandydatów pending ({pending_all} < "
+                            f"{DISCOVERY_MIN_PENDING_GHA_FAIL}) w całych Niemczech. "
+                            "Sprawdź [LEjek] w logu."
+                        )
 
         if enable_auto_email:
             rows_with_email = sum(

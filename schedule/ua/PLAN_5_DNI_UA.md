@@ -43,7 +43,6 @@ Tydzień N (przetwarzanie + wysyłka poprzedniej fali):
 | **Poniedziałek** | **07:00** | `schedule/ua/run_poniedzialek_prep.ps1` | `UA poniedzialek prep` |
 | **Poniedziałek** | **09:00** | `schedule/ua/run_poniedzialek_send.ps1` | `UA poniedzialek send` (partia 1) |
 | **Wtorek** | **09:00** | `schedule/ua/run_wtorek_send.ps1` | `UA wtorek send` (partia 2) |
-| **Co 3 dni** | **10:00** | `schedule/ua/run_sync_replies_reminders.ps1` | `UA sync odpowiedzi i przypomnienia` |
 
 | Dzień | Co robi |
 |-------|---------|
@@ -57,7 +56,6 @@ Tydzień N (przetwarzanie + wysyłka poprzedniej fali):
 | **Poniedziałek 07:00** | Rebuild Excel z cache (`ua-materialy-wyniki-mon`), **bez wysyłki** |
 | **Poniedziałek 09:00** | Wysyłka partia 1 (max **300**) |
 | **Wtorek 09:00** | Wysyłka partia 2 (kolejne **300** + zaległe) |
-| **Co 3 dni 10:00** | IMAP: odczyt odpowiedzi + przypomnienia UA (max 2×, min. 3 dni po zapytaniu / poprzednim przypomnieniu) |
 
 ## Task Scheduler (Windows)
 
@@ -91,7 +89,7 @@ pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela→thu → sync 
 **Wznowienie discovery:**
 
 ```powershell
-gh workflow run "UA discovery" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f resume_artifact_run_id=RUN_ID
+gh workflow run "UA discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f resume_artifact_run_id=RUN_ID
 ```
 
-Porównanie z harmonogramem DE GU: [`legacy/schedule/de_gu/PLAN_5_DNI.md`](../../legacy/schedule/de_gu/PLAN_5_DNI.md).
+Porównanie z harmonogramem DE GU: [`PLAN_5_DNI.md`](PLAN_5_DNI.md).

@@ -4,23 +4,17 @@ Wspólne nazwy zmiennych środowiskowych (identyczne jak w PowerShell User/Machi
 
 Ustawienie na stałe (PowerShell):
   [System.Environment]::SetEnvironmentVariable("SERPER_API_KEY", "...", "User")
-  [System.Environment]::SetEnvironmentVariable("MAIL_USER", "twoj@gmail.com", "User")
-  [System.Environment]::SetEnvironmentVariable("MAIL_PASSWORD", "haslo-aplikacji-google", "User")
-  [System.Environment]::SetEnvironmentVariable("MAIL_SENDER_NAME", "Imie Nazwisko", "User")
-  # Aliasy (opcjonalnie): GMAIL_USER, GMAIL_APP_PASSWORD, GMAIL_SENDER_NAME
+  [System.Environment]::SetEnvironmentVariable("MAIL_USER", "twoj@domena.pl", "User")
+  [System.Environment]::SetEnvironmentVariable("MAIL_PASSWORD", "...", "User")
+  [System.Environment]::SetEnvironmentVariable("SMTP_HOST", "serwer.home.pl", "User")
+  [System.Environment]::SetEnvironmentVariable("IMAP_HOST", "serwer.home.pl", "User")
+  # Opcjonalnie (stare nazwy nadal działają): GMAIL_USER, GMAIL_APP_PASSWORD, GMAIL_SENDER_NAME
 """
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 from pathlib import Path
-
-CANONICAL_PL_SENDER_NAME = "Maksym Swinczak"
-_LEGACY_PL_SENDER_NAME_RE = re.compile(
-    r"maksym\s+[\s,]*(?:świ[nń]czak|swi[nń]czak|świnczak)",
-    re.IGNORECASE,
-)
 
 _DOTENV_LOADED = False
 
@@ -64,14 +58,11 @@ ENV_IMAP_SSL = "IMAP_SSL"
 ENV_MAIL_BCC = "MAIL_BCC"
 ENV_MAIL_CC = "MAIL_CC"
 ENV_MAIL_ARCHIVE_IMAP = "MAIL_ARCHIVE_IMAP"
-# Osobny folder IMAP na kopie wysłanych (np. etykieta Gmail „wyslane”); domyślnie: wyslane
-ENV_MAIL_IMAP_ARCHIVE_FOLDER = "MAIL_IMAP_ARCHIVE_FOLDER"
 # Kompatybilność wsteczna (Gmail lub stare instalacje)
 ENV_GMAIL_USER = "GMAIL_USER"
 ENV_GMAIL_APP_PASSWORD = "GMAIL_APP_PASSWORD"
 ENV_GMAIL_SENDER_NAME = "GMAIL_SENDER_NAME"
 ENV_ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
-ENV_REQUIRE_CLAUDE_INQUIRY_EMAIL = "REQUIRE_CLAUDE_INQUIRY_EMAIL"
 ENV_CLAUDE_MODEL = "CLAUDE_MODEL"
 ENV_CLAUDE_MODEL_VERIFY = "CLAUDE_MODEL_VERIFY"
 ENV_CLAUDE_MODEL_FAST = "CLAUDE_MODEL_FAST"
@@ -82,7 +73,6 @@ ENV_ENABLE_GEO_DISTANCE_PLZ_FILTER = "ENABLE_GEO_DISTANCE_PLZ_FILTER"
 ENV_MAX_DISTANCE_KM_FROM_ANCHOR = "MAX_DISTANCE_KM_FROM_ANCHOR"
 ENV_SERPER_SHUFFLE_TERMS = "SERPER_SHUFFLE_TERMS"
 ENV_EMAIL_MX_CHECK = "EMAIL_MX_CHECK"
-ENV_USE_CLAUDE_REPLY_INTELLIGENCE = "USE_CLAUDE_REPLY_INTELLIGENCE"
 
 REQUIRED_FOR_EMAIL = (ENV_MAIL_USER, ENV_MAIL_PASSWORD)
 REQUIRED_FOR_SERPER = (ENV_SERPER_API_KEY,)
@@ -138,16 +128,6 @@ def get_anthropic_api_key() -> str:
     return get_env_value(ENV_ANTHROPIC_API_KEY)
 
 
-def require_claude_inquiry_email() -> bool:
-    """GHA / send: wymusza wywołanie Claude zamiast stałego szablonu UA."""
-    return get_env_value(ENV_REQUIRE_CLAUDE_INQUIRY_EMAIL).strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-
-
 def get_mail_user() -> str:
     return get_env_value(ENV_MAIL_USER) or get_env_value(ENV_GMAIL_USER)
 
@@ -156,24 +136,8 @@ def get_mail_password() -> str:
     return get_env_value(ENV_MAIL_PASSWORD) or get_env_value(ENV_GMAIL_APP_PASSWORD)
 
 
-def normalize_mail_sender_name(name: str) -> str:
-    """Ujednolica pisownię nadawcy PL: zawsze „Maksym Swinczak” (bez polskich znaków)."""
-    text = " ".join((name or "").replace("\n", " ").split()).strip()
-    if not text:
-        return text
-    return _LEGACY_PL_SENDER_NAME_RE.sub(CANONICAL_PL_SENDER_NAME, text)
-
-
-def normalize_sender_name_in_text(text: str) -> str:
-    """Zamienia stare warianty nazwiska w dowolnym tekście (np. cytat wątku)."""
-    if not text:
-        return text
-    return _LEGACY_PL_SENDER_NAME_RE.sub(CANONICAL_PL_SENDER_NAME, text)
-
-
 def get_mail_sender_name() -> str:
-    raw = get_env_value(ENV_MAIL_SENDER_NAME) or get_env_value(ENV_GMAIL_SENDER_NAME)
-    return normalize_mail_sender_name(raw)
+    return get_env_value(ENV_MAIL_SENDER_NAME) or get_env_value(ENV_GMAIL_SENDER_NAME)
 
 
 def get_gmail_user() -> str:

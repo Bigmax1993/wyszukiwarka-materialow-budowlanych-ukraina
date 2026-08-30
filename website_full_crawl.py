@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import os
 import re
-import time
 from collections import deque
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable
-from urllib.parse import parse_qs, unquote, urldefrag, urljoin, urlparse
+from typing import Callable
+from urllib.parse import urldefrag, urljoin, urlparse
 
 from bs4 import BeautifulSoup  # pyright: ignore[reportMissingModuleSource]
 
@@ -19,18 +18,6 @@ MAX_SITE_CRAWL_PAGES = 80
 _SITE_CRAWL_MAX_ENV = (os.environ.get("SITE_CRAWL_MAX_PAGES") or "").strip()
 if _SITE_CRAWL_MAX_ENV.isdigit():
     MAX_SITE_CRAWL_PAGES = max(10, int(_SITE_CRAWL_MAX_ENV))
-
-# Twardy limit czasu na jedną domenę — zapobiega 3h na .exe (read-timeout
-# requests liczy przerwę między bajtami, nie cały download).
-SITE_CRAWL_MAX_SECONDS = 300
-_SITE_CRAWL_SEC_ENV = (os.environ.get("SITE_CRAWL_MAX_SECONDS") or "").strip()
-if _SITE_CRAWL_SEC_ENV.isdigit():
-    SITE_CRAWL_MAX_SECONDS = max(0, int(_SITE_CRAWL_SEC_ENV))
-
-MAX_HTML_BYTES = 1_500_000
-HTML_FETCH_WALL_SECONDS = 25.0
-_DOWNLOAD_FILE_PATH_RE = re.compile(r"/download/file(?:/|$)", re.I)
-_BINARY_MAGIC_PREFIXES = (b"MZ", b"%PDF", b"PK\x03\x04", b"Rar!", b"\x7fELF")
 
 _SKIP_PATH_EXTENSIONS = (
     ".pdf",
@@ -61,17 +48,6 @@ _SKIP_PATH_EXTENSIONS = (
     ".ttf",
     ".eot",
     ".ico",
-    ".exe",
-    ".msi",
-    ".rtf",
-    ".dmg",
-    ".iso",
-    ".apk",
-    ".bin",
-    ".cab",
-    ".gz",
-    ".bz2",
-    ".tar",
 )
 
 _SKIP_PATH_MARKERS = (
@@ -81,14 +57,6 @@ _SKIP_PATH_MARKERS = (
     "mailto:",
     "tel:",
     "javascript:",
-)
-
-_HTML_CONTENT_TYPE_PREFIXES = (
-    "text/html",
-    "application/xhtml",
-    "text/xml",
-    "application/xml",
-    "text/plain",
 )
 
 
@@ -115,115 +83,6 @@ def website_crawl_result_from_dict(data: dict) -> WebsiteCrawlResult:
     )
 
 
-def _url_parts_for_extension_check(url: str) -> list[str]:
-    parsed = urlparse((url or "").strip())
-    parts = [unquote(parsed.path or "")]
-    try:
-        qs = parse_qs(parsed.query or "", keep_blank_values=True)
-        for key, vals in qs.items():
-            parts.append(unquote(key))
-            parts.extend(unquote(v) for v in vals)
-    except Exception:
-        parts.append(unquote(parsed.query or ""))
-    return parts
-
-
-def is_skippable_asset_url(url: str) -> bool:
-    """True = nie pobieraj (binarka, asset, download/file?Name=*.exe)."""
-    raw = (url or "").strip()
-    if not raw:
-        return True
-    low = raw.lower()
-    for marker in _SKIP_PATH_MARKERS:
-        if marker in low:
-            return True
-    parsed = urlparse(raw)
-    path = unquote(parsed.path or "")
-    if _DOWNLOAD_FILE_PATH_RE.search(path):
-        return True
-    for part in _url_parts_for_extension_check(raw):
-        part_low = part.lower()
-        for ext in _SKIP_PATH_EXTENSIONS:
-            if part_low.endswith(ext):
-                return True
-    return False
-
-
-def is_probably_html_content_type(content_type: str) -> bool:
-    if not (content_type or "").strip():
-        return True
-    low = content_type.lower().split(";", 1)[0].strip()
-    if any(low.startswith(prefix) for prefix in _HTML_CONTENT_TYPE_PREFIXES):
-        return True
-    if low.startswith(("image/", "audio/", "video/", "font/")):
-        return False
-    if "javascript" in low or "octet-stream" in low:
-        return False
-    if low.startswith("application/") and "html" not in low and "xml" not in low:
-        return False
-    return True
-
-
-def read_response_html_capped(
-    response: Any,
-    *,
-    max_bytes: int = MAX_HTML_BYTES,
-    max_seconds: float = HTML_FETCH_WALL_SECONDS,
-) -> str:
-    """Zczytaj treść HTML z limitem bajtów i czasu — nie ściągaj .exe."""
-    headers = getattr(response, "headers", None) or {}
-    try:
-        content_type = headers.get("Content-Type") or headers.get("content-type") or ""
-    except Exception:
-        content_type = ""
-    if not is_probably_html_content_type(str(content_type)):
-        close = getattr(response, "close", None)
-        if callable(close):
-            close()
-        return ""
-    try:
-        raw_len = headers.get("Content-Length") or headers.get("content-length")
-        if raw_len is not None and int(raw_len) > max_bytes:
-            close = getattr(response, "close", None)
-            if callable(close):
-                close()
-            return ""
-    except (TypeError, ValueError):
-        pass
-
-    content = b""
-    already_loaded = getattr(response, "_content", False)
-    if already_loaded:
-        content = bytes(getattr(response, "content", b"") or b"")[:max_bytes]
-    else:
-        chunks: list[bytes] = []
-        total = 0
-        started = time.monotonic()
-        try:
-            for chunk in response.iter_content(chunk_size=8192):
-                if not chunk:
-                    continue
-                if time.monotonic() - started > max_seconds:
-                    break
-                chunks.append(chunk)
-                total += len(chunk)
-                if total >= max_bytes:
-                    break
-        finally:
-            close = getattr(response, "close", None)
-            if callable(close):
-                close()
-        content = b"".join(chunks)[:max_bytes]
-
-    if content.startswith(_BINARY_MAGIC_PREFIXES):
-        return ""
-    encoding = getattr(response, "encoding", None) or "utf-8"
-    try:
-        return content.decode(encoding, errors="replace")
-    except LookupError:
-        return content.decode("utf-8", errors="replace")
-
-
 def _normalize_crawl_url(
     raw_url: str,
     *,
@@ -239,8 +98,14 @@ def _normalize_crawl_url(
     normalized = normalize_website(url)
     if not normalized:
         return ""
-    if is_skippable_asset_url(normalized):
-        return ""
+    low = normalized.lower()
+    for marker in _SKIP_PATH_MARKERS:
+        if marker in low:
+            return ""
+    path = (urlparse(normalized).path or "").lower()
+    for ext in _SKIP_PATH_EXTENSIONS:
+        if path.endswith(ext):
+            return ""
     if get_registrable_domain(normalized) != site_domain:
         return ""
     return normalized
@@ -305,8 +170,6 @@ def crawl_entire_website(
     normalize_website: Callable[[str], str],
     on_step: Callable[[str], None] | None = None,
     max_pages: int = MAX_SITE_CRAWL_PAGES,
-    max_seconds: float | None = None,
-    should_stop: Callable[[], bool] | None = None,
 ) -> WebsiteCrawlResult:
     """
   BFS po całej domenie. Każda strona: fetch HTML → parse → odkryj linki wewnętrzne.
@@ -322,31 +185,10 @@ def crawl_entire_website(
     result = WebsiteCrawlResult()
     queue: deque[str] = deque([start])
     queued: set[str] = {start}
-    started = time.monotonic()
-    if max_seconds is None:
-        max_seconds = float(SITE_CRAWL_MAX_SECONDS) if SITE_CRAWL_MAX_SECONDS > 0 else None
-    elif max_seconds <= 0:
-        max_seconds = None
 
     while queue and len(result.urls_visited) < max_pages:
-        if should_stop and should_stop():
-            result.capped = True
-            logger.info("Website-Crawl: limit czasu scrapera — stop %s", start)
-            break
-        if max_seconds is not None and (time.monotonic() - started) >= max_seconds:
-            result.capped = True
-            logger.info(
-                "Website-Crawl: limit %ss na domenę (%s)",
-                int(max_seconds),
-                start,
-            )
-            break
-
         url = queue.popleft()
         if url in result.pages:
-            continue
-        if is_skippable_asset_url(url):
-            result.urls_skipped.append(url)
             continue
 
         if on_step:
@@ -384,12 +226,11 @@ def crawl_entire_website(
                 queue.append(link)
 
     if queue:
-        if not result.capped:
-            logger.info(
-                "Website-Crawl: Limit %s Seiten erreicht (%s übrig in Queue)",
-                max_pages,
-                len(queue),
-            )
         result.capped = True
+        logger.info(
+            "Website-Crawl: Limit %s Seiten erreicht (%s übrig in Queue)",
+            max_pages,
+            len(queue),
+        )
 
     return result

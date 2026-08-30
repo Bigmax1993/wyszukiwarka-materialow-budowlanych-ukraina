@@ -49,20 +49,6 @@ _LIST_OPTS = {
 _GU_FOLDER_NAME = "GU Bauunternehmen Wyniki"
 
 
-def _normalize_folder_id(raw: str) -> str:
-    value = (raw or "").strip()
-    if "/folders/" in value:
-        return value.split("/folders/", 1)[1].split("?", 1)[0].strip("/")
-    return value
-
-
-def _list_corpora(*, use_oauth: bool, drive_id: str | None) -> str:
-    # OAuth + folder na Moim dysku: corpora=allDrives zwraca 404 przy list(q=... in parents).
-    if use_oauth and not drive_id:
-        return "user"
-    return "allDrives"
-
-
 def _gdrive_version_xlsx_enabled() -> bool:
     raw = (os.environ.get("GDRIVE_VERSION_XLSX") or "1").strip().lower()
     return raw not in ("0", "false", "no", "off")
@@ -202,9 +188,7 @@ def _list_shared_drives(service) -> list[dict]:
     return drives
 
 
-def _find_folder_in_parent(
-    service, parent_id: str, name: str, *, corpora: str = "allDrives"
-) -> str | None:
+def _find_folder_in_parent(service, parent_id: str, name: str) -> str | None:
     safe_name = name.replace("'", "\\'")
     q = (
         f"'{parent_id}' in parents and name = '{safe_name}' "
@@ -212,7 +196,7 @@ def _find_folder_in_parent(
     )
     res = (
         service.files()
-        .list(q=q, fields="files(id)", pageSize=1, corpora=corpora, **_LIST_OPTS)
+        .list(q=q, fields="files(id)", pageSize=1, corpora="allDrives", **_LIST_OPTS)
         .execute()
     )
     files = res.get("files") or []
@@ -283,64 +267,33 @@ def _resolve_shared_drive_upload_folder(service, preferred_folder_id: str) -> tu
     return created, shared_drive_id
 
 
-def _resolve_upload_folder(service, folder_id: str, *, use_oauth: bool) -> tuple[str, str]:
-    """Ustal folder i corpora list() (OAuth / Shared Drive / impersonacja)."""
-    folder_id = _normalize_folder_id(folder_id)
-    if not folder_id:
-        raise SystemExit(
-            "GDRIVE_FOLDER_ID pusty. Ustaw secret GDRIVE_FOLDER_ID_UA (sam ID folderu z URL Drive)."
-        )
-
-    try:
-        meta = _folder_metadata(service, folder_id)
-    except Exception as exc:
-        hint = (
-            "Sprawdz GDRIVE_FOLDER_ID_UA i udostepnij folder kontu OAuth (Edytor). "
-            "ID to fragment po /folders/ w URL Drive."
-        )
-        raise SystemExit(f"Folder Drive niedostepny (ID={folder_id}): {exc}\n{hint}") from exc
-
-    if meta.get("mimeType") != "application/vnd.google-apps.folder":
-        raise SystemExit(
-            f"GDRIVE_FOLDER_ID={folder_id} nie jest folderem ({meta.get('name', '?')})."
-        )
-
-    corpora = _list_corpora(use_oauth=use_oauth, drive_id=meta.get("driveId"))
-    label = "OAuth" if use_oauth else "konto uslugowe"
-    location = "Shared Drive" if meta.get("driveId") else "Moj dysk"
-    print(f"{label} -> folder {meta.get('name', folder_id)} ({location}, corpora={corpora})")
-    return folder_id, corpora
-
-
-def _resolve_upload_folder_service_account(service, folder_id: str) -> tuple[str, str]:
-    folder_id = _normalize_folder_id(folder_id)
-    if not folder_id:
-        raise SystemExit("GDRIVE_FOLDER_ID pusty.")
-
+def _resolve_upload_folder(service, folder_id: str, *, use_oauth: bool) -> str:
+    """Ustal folder, do którego można uploadować (OAuth / Shared Drive / impersonacja)."""
+    if use_oauth:
+        print(f"OAuth -> folder {folder_id}")
+        return folder_id
     try:
         meta = _folder_metadata(service, folder_id)
         if meta.get("driveId"):
             print(f"Upload na Shared Drive (folder: {meta.get('name', folder_id)})")
-            return folder_id, "allDrives"
+            return folder_id
     except Exception as exc:
         print(f"Nie mozna odczytac folderu {folder_id}: {exc}")
 
     if (os.environ.get("GDRIVE_IMPERSONATE_EMAIL") or "").strip():
         print(f"Upload przez delegacje do folderu {folder_id}")
-        return folder_id, "allDrives"
+        return folder_id
 
     print(
         "Folder jest na 'Moim dysku' — konto uslugowe nie moze tam zapisywac plikow. "
         "Przelaczam na Shared Drive..."
     )
     upload_id, _drive = _resolve_shared_drive_upload_folder(service, folder_id)
-    return upload_id, "allDrives"
+    return upload_id
 
 
-def _find_or_create_folder(
-    service, parent_id: str, name: str, *, corpora: str = "allDrives"
-) -> str:
-    existing = _find_folder_in_parent(service, parent_id, name, corpora=corpora)
+def _find_or_create_folder(service, parent_id: str, name: str) -> str:
+    existing = _find_folder_in_parent(service, parent_id, name)
     if existing:
         return existing
     return _create_folder(service, parent_id, name)
@@ -353,7 +306,6 @@ def _upload_file(
     parent_id: str,
     *,
     version_xlsx: bool | None = None,
-    corpora: str = "allDrives",
 ) -> str:
     mime, _ = mimetypes.guess_type(str(local))
     media = MediaFileUpload(str(local), mimetype=mime or "application/octet-stream", resumable=True)
@@ -376,7 +328,7 @@ def _upload_file(
     q = f"'{parent_id}' in parents and name = '{safe_name}' and trashed = false"
     existing = (
         service.files()
-        .list(q=q, fields="files(id)", pageSize=1, corpora=corpora, **_LIST_OPTS)
+        .list(q=q, fields="files(id)", pageSize=1, corpora="allDrives", **_LIST_OPTS)
         .execute()
         .get("files")
         or []
@@ -390,115 +342,7 @@ def _upload_file(
     return created["id"]
 
 
-def list_xlsx_in_folder(service, folder_id: str, *, corpora: str = "allDrives") -> list[dict]:
-    q = (
-        f"'{folder_id}' in parents and trashed = false and "
-        f"mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'"
-    )
-    files: list[dict] = []
-    page_token = None
-    while True:
-        res = (
-            service.files()
-            .list(
-                q=q,
-                fields="nextPageToken, files(id,name,createdTime,modifiedTime)",
-                pageSize=100,
-                pageToken=page_token,
-                corpora=corpora,
-                **_LIST_OPTS,
-            )
-            .execute()
-        )
-        files.extend(res.get("files") or [])
-        page_token = res.get("nextPageToken")
-        if not page_token:
-            break
-    files.sort(key=lambda f: (f.get("modifiedTime") or f.get("createdTime") or "", f.get("name") or ""))
-    return files
-
-
-def list_json_in_folder(service, folder_id: str, *, corpora: str = "allDrives") -> list[dict]:
-    q = (
-        f"'{folder_id}' in parents and trashed = false and "
-        f"(mimeType = 'application/json' or mimeType = 'text/plain' or name contains 'cache.json')"
-    )
-    files: list[dict] = []
-    page_token = None
-    while True:
-        res = (
-            service.files()
-            .list(
-                q=q,
-                fields="nextPageToken, files(id,name,createdTime,modifiedTime,mimeType,size)",
-                pageSize=100,
-                pageToken=page_token,
-                corpora=corpora,
-                **_LIST_OPTS,
-            )
-            .execute()
-        )
-        files.extend(res.get("files") or [])
-        page_token = res.get("nextPageToken")
-        if not page_token:
-            break
-    files = [f for f in files if "cache" in (f.get("name") or "").lower()]
-    files.sort(key=lambda f: (f.get("modifiedTime") or f.get("createdTime") or "", f.get("name") or ""))
-    return files
-
-
-def list_google_sheets_in_folder(service, folder_id: str, *, corpora: str = "allDrives") -> list[dict]:
-    q = (
-        f"'{folder_id}' in parents and trashed = false and "
-        f"mimeType = 'application/vnd.google-apps.spreadsheet'"
-    )
-    files: list[dict] = []
-    page_token = None
-    while True:
-        res = (
-            service.files()
-            .list(
-                q=q,
-                fields="nextPageToken, files(id,name,createdTime,modifiedTime,mimeType)",
-                pageSize=100,
-                pageToken=page_token,
-                corpora=corpora,
-                **_LIST_OPTS,
-            )
-            .execute()
-        )
-        files.extend(res.get("files") or [])
-        page_token = res.get("nextPageToken")
-        if not page_token:
-            break
-    files.sort(key=lambda f: (f.get("modifiedTime") or f.get("createdTime") or "", f.get("name") or ""))
-    return files
-
-
-def download_drive_file(service, file_id: str, dest: Path, *, mime_type: str = "") -> Path:
-    from googleapiclient.http import MediaIoBaseDownload
-
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if mime_type == "application/vnd.google-apps.spreadsheet":
-        if dest.suffix.lower() != ".xlsx":
-            dest = dest.with_suffix(".xlsx")
-        request = service.files().export_media(
-            fileId=file_id,
-            mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-    else:
-        request = service.files().get_media(fileId=file_id, **_DRIVE_API_OPTS)
-    with dest.open("wb") as fh:
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _status, done = downloader.next_chunk()
-    return dest
-
-
-def upload_files_flat(
-    service, MediaFileUpload, local_dir: Path, drive_parent_id: str, *, corpora: str = "allDrives"
-) -> int:
+def upload_files_flat(service, MediaFileUpload, local_dir: Path, drive_parent_id: str) -> int:
     if not local_dir.is_dir():
         return 0
     count = 0
@@ -507,34 +351,24 @@ def upload_files_flat(
             continue
         if p.suffix.lower() == ".xlsx" and _gdrive_version_xlsx_enabled():
             dated = versioned_xlsx_upload_name(p.name)
-            _upload_file(
-                service, MediaFileUpload, p, drive_parent_id, version_xlsx=True, corpora=corpora
-            )
+            _upload_file(service, MediaFileUpload, p, drive_parent_id, version_xlsx=True)
             print(f"  OK {dated}")
-            _upload_file(
-                service, MediaFileUpload, p, drive_parent_id, version_xlsx=False, corpora=corpora
-            )
+            _upload_file(service, MediaFileUpload, p, drive_parent_id, version_xlsx=False)
             print(f"  OK {p.name} (aktualny)")
             count += 1
             continue
-        _upload_file(service, MediaFileUpload, p, drive_parent_id, corpora=corpora)
+        _upload_file(service, MediaFileUpload, p, drive_parent_id)
         print(f"  OK {p.name}")
         count += 1
     return count
 
 
 def upload_folder_named(
-    service,
-    MediaFileUpload,
-    local_dir: Path,
-    drive_parent_id: str,
-    drive_name: str,
-    *,
-    corpora: str = "allDrives",
+    service, MediaFileUpload, local_dir: Path, drive_parent_id: str, drive_name: str
 ) -> int:
     if not local_dir.is_dir():
         return 0
-    sub_id = _find_or_create_folder(service, drive_parent_id, drive_name, corpora=corpora)
+    sub_id = _find_or_create_folder(service, drive_parent_id, drive_name)
     count = 0
     for p in sorted(local_dir.iterdir()):
         if p.is_file():
@@ -543,26 +377,21 @@ def upload_folder_named(
                 if _gdrive_version_xlsx_enabled() and p.suffix.lower() == ".xlsx"
                 else p.name
             )
-            _upload_file(service, MediaFileUpload, p, sub_id, corpora=corpora)
+            _upload_file(service, MediaFileUpload, p, sub_id)
             print(f"  OK {drive_name}/{uploaded_as}")
             count += 1
     return count
 
 
 def _default_folder_id(campaign: str) -> str:
-    explicit = _normalize_folder_id(os.environ.get("GDRIVE_FOLDER_ID") or "")
+    explicit = (os.environ.get("GDRIVE_FOLDER_ID") or "").strip()
     if explicit:
         return explicit
     if campaign == "pl":
-        return _normalize_folder_id(
-            os.environ.get("GDRIVE_FOLDER_ID_PL") or GOOGLE_DRIVE_PL_FOLDER_ID
-        )
+        return (os.environ.get("GDRIVE_FOLDER_ID_PL") or GOOGLE_DRIVE_PL_FOLDER_ID).strip()
     if campaign == "ua":
-        ua = _normalize_folder_id(os.environ.get("GDRIVE_FOLDER_ID_UA") or "")
-        if ua:
-            return ua
-        return _normalize_folder_id(GOOGLE_DRIVE_GU_FOLDER_ID)
-    return _normalize_folder_id(GOOGLE_DRIVE_GU_FOLDER_ID)
+        return (os.environ.get("GDRIVE_FOLDER_ID_UA") or GOOGLE_DRIVE_GU_FOLDER_ID).strip()
+    return GOOGLE_DRIVE_GU_FOLDER_ID
 
 
 def main() -> int:
@@ -583,40 +412,23 @@ def main() -> int:
         "--folder-id",
         default=None,
     )
-    parser.add_argument(
-        "--verify-only",
-        action="store_true",
-        help="Tylko sprawdz credentiale i dostep do folderu Drive (bez uploadu).",
-    )
     args = parser.parse_args()
-    folder_id = _normalize_folder_id(args.folder_id or _default_folder_id(args.campaign))
+    folder_id = (args.folder_id or _default_folder_id(args.campaign)).strip()
 
     creds, use_oauth = _load_credentials()
     service, MediaFileUpload = _drive_service(creds)
-    if use_oauth:
-        upload_folder_id, corpora = _resolve_upload_folder(service, folder_id, use_oauth=True)
-    else:
-        upload_folder_id, corpora = _resolve_upload_folder_service_account(service, folder_id)
-
-    if args.verify_only:
-        print(f"OK: folder Drive dostepny ({upload_folder_id})")
-        return 0
-
     data_root = resolve_data_root(args.campaign_dir, campaign=args.campaign)
+    upload_folder_id = _resolve_upload_folder(service, folder_id, use_oauth=use_oauth)
 
     total = 0
     w = wyniki_dir(data_root)
     if w.is_dir():
         print(f"Upload plikow z {w} -> Drive {upload_folder_id}")
-        total += upload_files_flat(
-            service, MediaFileUpload, w, upload_folder_id, corpora=corpora
-        )
+        total += upload_files_flat(service, MediaFileUpload, w, upload_folder_id)
     s = wyslane_dir(data_root)
     if s.is_dir():
         print(f"Upload {s} -> Drive/wyslane/")
-        total += upload_folder_named(
-            service, MediaFileUpload, s, upload_folder_id, "wyslane", corpora=corpora
-        )
+        total += upload_folder_named(service, MediaFileUpload, s, upload_folder_id, "wyslane")
 
     if total == 0:
         print(

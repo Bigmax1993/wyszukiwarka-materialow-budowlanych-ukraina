@@ -1,57 +1,31 @@
-# Google Drive — wyniki kampanii UA
+# Google Drive — wyniki kampanii GU
 
-## Produkcja (UA materiały)
+Folder w chmurze: [GU Bauunternehmen](https://drive.google.com/drive/folders/1tP8oUi72t4EHDbE9GnHFdvfNtNsJe4xf)
 
-Utwórz folder na Drive (np. **Wyniki wyszukiwania materialow budowlanych Ukraina**) i ustaw secret:
+ID folderu: `1tP8oUi72t4EHDbE9GnHFdvfNtNsJe4xf`
 
-| Secret | Opis |
-|--------|------|
-| `GDRIVE_FOLDER_ID_UA` | ID folderu Drive dla wyników UA |
+## Co trafia na Drive
 
-### Co ma zostać w folderze
+| Plik / folder | Opis |
+|---------------|------|
+| `de_gu_bauunternehmen_cache.json` | Cache |
+| `de_gu_bauunternehmen_kontakte.xlsx` | Excel (append; arkusz Info — nie przebudowa od zera) |
+| `de_gu_bauunternehmen_scraper.log` | Log |
+| `wyslane/*.eml` | Kopie wysłanych maili |
 
-| Plik | Opis |
-|------|------|
-| `ua_materialy_zbiorczy.xlsx` | **Główny Excel** — unia wierszy ze wszystkich Excel (Drive + artefakty GH), kolumny po polsku, nadpisywany w miejscu |
-| `ua_materialy_cache.json` | Cache Serper + kontakty |
-| `ua_materialy_oblast_rotation.json` | Stan rotacji obwodów |
-| `ua_materialy_scraper.log` | Log |
+Folder może być **pusty** przed pierwszym uruchomieniem scrapera — pliki powstają automatycznie.
 
-Pozostałe pliki (stare `ua_materialy_kontakte*.xlsx`, inne artefakty) usuwa workflow **UA cleanup Drive** / skrypt `scripts/cleanup_drive_ua_keep_zbiorczy.py` (zostawia tylko zbiorczy + `.json` + `.log`).
-
-### Excel zbiorczy
-
-| | |
-|--|--|
-| Skrypt | `scripts/merge_drive_excel_pl.py` |
-| Workflow ręczny | `UA merge Excel Drive` (`ua_merge_drive_excel.yml`) |
-| Po sync poniedziałkowym | krok w `sync-google-drive-ua.yml` |
-| Źródła | Excel z Drive + najnowsze artefakty `ua-materialy-wyniki-{thu,pi,mon,tue,fri,reminders}` |
-| Zakres | **wiersze firm tylko z Exceli**; kolumny mail/odpowiedź/cena **nigdy** nie trafiają do zbiorczego |
-| Arkusze | `Info`, `Kontakty`, `Obwody` — append, unia kolumn, nagłówki PL |
-| Upload | `version_xlsx=False` — zawsze ten sam `ua_materialy_zbiorczy.xlsx` |
-
-```powershell
-python scripts/merge_drive_excel_pl.py --campaign ua
-python scripts/merge_drive_excel_pl.py --local-dir Wyniki --dry-run
-```
-
-### Sync i cleanup
+## Sposoby uploadu
 
 | Sposób | Kiedy |
 |--------|--------|
-| **GitHub Actions** | `Sync wyniki Google Drive UA` — poniedziałek **06:00** Europe/Warsaw (upload `Wyniki/` + przebudowa zbiorczego) |
-| **Cleanup** | `UA cleanup Drive (keep zbiorczy/json/log)` — ręcznie, po syncu jeśli wrócą stare Excel |
-| **Lokalnie** | `python scripts/gdrive_upload_wyniki.py --campaign ua` |
-| **PC + Drive for desktop** | `KANBUD_DATA_DIR` → folder UA na dysku |
+| **GitHub Actions** | Workflow `Sync wyniki Google Drive` (poniedziałek 06:00 PL / ręcznie) |
+| **Lokalnie** | `python scripts/gdrive_upload_wyniki.py --campaign-dir .` |
+| **PC + Drive for desktop** | Zmienna `KANBUD_GOOGLE_DRIVE_GU_PATH` → zapis na bieżąco |
 
-Artefakt źródłowy sync: domyślnie najnowszy z kolejki `reminders` → `thu` → `mon` → `tue` → `fri` (albo wymuszony `artifact_name`).
+### Upload z GitHub Actions (OAuth — zalecane przy folderze na „Moim dysku”)
 
-Szczegóły workflow: [`GITHUB_ACTIONS.md`](GITHUB_ACTIONS.md).
-
----
-
-## Upload z GitHub Actions (OAuth)
+Konto usługowe **nie może** zapisywać plików do zwykłego udostępnionego folderu. Jednorazowo na PC:
 
 ```powershell
 pip install -r requirements-drive.txt
@@ -59,23 +33,87 @@ pip install -r requirements-drive.txt
 python scripts/gdrive_oauth_setup.py
 ```
 
-Skrypt ustawi secrets `GDRIVE_OAUTH_*`. Kolejne runy CI uploadują na folder UA.
+Skrypt ustawi secrets `GDRIVE_OAUTH_*` i uruchomi sync. Kolejne runy CI uploadują na Twój folder `1tP8oUi72t4EHDbE9GnHFdvfNtNsJe4xf`.
 
-Alternatywa: `GDRIVE_SERVICE_ACCOUNT_JSON` + Shared Drive (`GDRIVE_SHARED_DRIVE_ID`).
+## Stała reguła sync (GitHub Actions)
 
----
+| Reguła | Wartość |
+|--------|---------|
+| **Kiedy** | **Poniedziałek 06:00** (Europe/Warsaw); ręcznie: `gh workflow run "Sync wyniki Google Drive"` |
+| **Cron** | `0 6 * * 1` (Europe/Warsaw) |
+| **Źródło danych** | Artefakt **`de-gu-wyniki-thu`** (niedzielny backfill) — priorytet nad wysyłkami |
+| **Kolejność fallback** | `thu` → `mon` → `tue` → `fri` (pierwszy nie-wygasły) |
+| **Trigger** | Tylko `schedule` + `workflow_dispatch` (bez auto-sync po wtorku) |
 
-## Zmienne środowiskowe (lokalnie)
+Po niedzielnym backfillu na Drive trafia **świeży Excel** (np. 20 firm), zanim w poniedziałek o 07:00 ruszy prep. Lokalny skrypt `scripts/upload_wyniki_to_drive.ps1` używa **tej samej** kolejności artefaktów co workflow CI.
+
+## Konto usługi Google (jednorazowo)
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → projekt → włącz **Google Drive API**.
+2. **Administracja → Konta usługi** → utwórz konto (np. `gu-wyniki-upload`) → **Klucze** → **JSON** (pobierz plik).
+3. **Nie używaj** klucza API (`AIza...`) z sekcji „Dane logowania” — potrzebny jest **plik JSON** z `type: service_account`.
+4. **GitHub Actions (wymagane):** konto usługowe **nie ma własnej przestrzeni** na „Moim dysku”.
+   - Utwórz **dysk współdzielony** (Shared Drive) w Google Workspace.
+   - Dodaj e-mail konta usługi (`...@....iam.gserviceaccount.com`) jako **Content manager** (Zarządzanie treścią).
+   - Skrypt sam utworzy folder `GU Bauunternehmen Wyniki` i wgra pliki (albo użyje folderu, jeśli już jest na Shared Drive).
+   - Opcjonalnie: secret **`GDRIVE_SHARED_DRIVE_ID`** = ID dysku (z URL dysku współdzielonego).
+   - Alternatywa (Workspace): delegacja domeny + secret **`GDRIVE_IMPERSONATE_EMAIL`** = Twój e-mail firmowy.
+5. Folder na „Moim dysku” możesz nadal udostępnić do podglądu; upload z CI i tak trafi na Shared Drive.
+6. GitHub: secret **`GDRIVE_SERVICE_ACCOUNT_JSON`** = cała treść pliku JSON.
+
+### Automatyczny setup secretu (PC)
+
+```powershell
+# Po pobraniu JSON — skopiuj do secrets\gdrive-service-account.json lub zostaw w Pobranych
+cd Wyszukiwarka-partnerow
+.\scripts\setup_gdrive_github_secret.ps1
+```
+
+## Załącznik PPTX (poniedziałek/wtorek, GitHub Actions)
+
+Prezentacja źródłowa: [Google Slides MFG](https://docs.google.com/presentation/d/1kBnp5x0pdgXZSPzVte9e92IUgn2A5gSe/edit)  
+ID: `1kBnp5x0pdgXZSPzVte9e92IUgn2A5gSe`
+
+Na runnerze GitHub Actions workflowy send używają pliku z repo:
+
+`assets/campaign/MFG_Referenzliste_Einzelhandel.pptx`
+
+Po aktualizacji Slides: **Plik → Pobierz → PPTX**, zapisz w `assets/campaign/`, commit + push.
+
+Alternatywy (lokalnie / fallback):
+
+- `MFG_EMAIL_ATTACHMENT_PATH` w `.env`
+- Udostępnienie Slides kontu usługi Google (**Przeglądający**) — auto-pobranie przez `mfg_gu_email_attachment.py`
+
+**Wysyłka bez PPTX kończy się błędem.**
+
+## Zmienne środowiskowe
 
 | Zmienna | Opis |
 |---------|------|
-| `KANBUD_DATA_DIR` | Folder wyników (cache, Excel, wyslane/) |
-| `GDRIVE_SERVICE_ACCOUNT_FILE` | Ścieżka do JSON konta usługi |
-| `GDRIVE_OAUTH_*` | OAuth Desktop (patrz `gdrive_oauth_setup.py`) |
-| `GDRIVE_VERSION_XLSX` | `1` (domyślnie): upload `*_kontakte_YYYY-MM-DD_HHMM.xlsx` bez nadpisywania; zbiorczy i tak jest osobnym plikiem bez wersji |
+| `GDRIVE_SERVICE_ACCOUNT_JSON` | Treść JSON (GitHub Actions / env) |
+| `GDRIVE_SERVICE_ACCOUNT_FILE` | Ścieżka do pliku JSON (lokalnie) |
+| `GDRIVE_FOLDER_ID` | Domyślnie ID folderu GU powyżej |
+| `GDRIVE_SHARED_DRIVE_ID` | ID dysku współdzielonego (opcjonalnie) |
+| `GDRIVE_IMPERSONATE_EMAIL` | E-mail użytkownika Workspace — delegacja DWD (opcjonalnie) |
+| `KANBUD_GOOGLE_DRIVE_GU_PATH` | Lokalna ścieżka Drive for desktop |
 
 ---
 
-## Legacy DE GU
+## Kampania PL — folder Drive
 
-Folder archiwalny GU: `1tP8oUi72t4EHDbE9GnHFdvfNtNsJe4xf` — patrz [`legacy/README.md`](../legacy/README.md). **Nie** używany przez pipeline UA.
+Folder: [PL Materialy](https://drive.google.com/drive/folders/1O15CdN0TH8rx74sPP5C1GuYSweX81IGw)
+
+ID: `1O15CdN0TH8rx74sPP5C1GuYSweX81IGw` (secret `GDRIVE_FOLDER_ID_PL`)
+
+| Plik | Opis |
+|------|------|
+| `pl_materialy_cache.json` | Cache (wersja `pl_enrichment_v2`) |
+| `pl_materialy_kontakte.xlsx` | Excel kontaktów |
+| `pl_materialy_scraper.log` | Log |
+| `wyslane/*.eml` | Kopie wysłanych maili |
+
+Workflow: **Sync wyniki Google Drive PL** (poniedziałek **11:00** PL). Artefakt źródłowy: `pl-materialy-wyniki-thu` (niedzielny backfill).
+
+Szczegóły kampanii: [`PL_MATERIALY.md`](PL_MATERIALY.md)
+

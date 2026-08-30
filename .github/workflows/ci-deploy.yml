@@ -13,7 +13,6 @@ jobs:
       PYTHONUTF8: "1"
       DISABLE_SEND_WINDOW: "1"
       SCRAPER_TIMEZONE: Europe/Warsaw
-      UA_REGIONAL_INQUIRY_EMAIL_FROM: "2026-07-13"
     steps:
       - uses: actions/checkout@v4
 
@@ -26,8 +25,8 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install chromium --with-deps
 
-      - name: Smoke tests (UA materialy)
-        run: python ua_materialy_scraper.py --test
+      - name: Smoke tests
+        run: python de_gu_bauunternehmen_scraper.py --test
 
       - name: Validate secrets (presence only)
         env:
@@ -35,23 +34,17 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MAIL_USER: ${{ secrets.MAIL_USER }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
-          MAIL_SENDER_NAME: ${{ secrets.MAIL_SENDER_NAME }}
         run: |
           python -c "
           import os, sys
-          missing = [k for k in ('SERPER_API_KEY','ANTHROPIC_API_KEY','MAIL_USER','MAIL_PASSWORD','MAIL_SENDER_NAME') if not (os.environ.get(k) or '').strip()]
+          missing = [k for k in ('SERPER_API_KEY','ANTHROPIC_API_KEY','MAIL_USER','MAIL_PASSWORD') if not (os.environ.get(k) or '').strip()]
           if missing:
               print('MISSING SECRETS:', ', '.join(missing))
               sys.exit(1)
           print('OK: wymagane secrets ustawione (wartosci ukryte).')
           "
 
-      - name: Compile sync/reminder modules
-        run: |
-          python -m py_compile ua_sync_replies_and_reminders.py
-          python -m py_compile libs/email_reply_intelligence.py
-
       - name: Dry-run email pipeline (bez wysylki SMTP)
         env:
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
-        run: python ua_materialy_scraper.py --dry-run-email --send-emails-only
+        run: python de_gu_bauunternehmen_scraper.py --dry-run-email --send-emails-only

@@ -1,116 +1,264 @@
-# GitHub Actions — kampania UA
+# GitHub Actions — kampania GU
 
-Repozytorium: [wyszukiwarka-materialow-budowlanych-ukraina](https://github.com/Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina)
 
-Kampania PL (osobne repo): [wyszukiwarka-materialow-budowlanych-polska](https://github.com/Bigmax1993/wyszukiwarka-materialow-budowlanych-polska)
 
-> **DE GU:** workflowy `de_gu_*.yml` nie istnieją. Kod w `legacy/de_gu/`.
+Repozytorium: [Wyszukiwarka-partnerow](https://github.com/Bigmax1993/Wyszukiwarka-partnerow)
 
-## Workflowy (11)
+
+
+## Workflowy
+
+
 
 | Workflow | Plik | Trigger | Co robi |
-|----------|------|---------|---------|
-| **Tests** | `tests.yml` | push, PR, ręcznie | smoke UA + regresja + pytest (izolacja, crawl, Excel PL, …) |
-| **CI Deploy** | `ci-deploy.yml` | push | smoke UA + secrets + dry-run maili |
-| **UA discovery** | `ua_materialy_pi.yml` | cron, ręcznie | Discovery pon–pt → `ua-materialy-wyniki-pi` |
-| **UA niedziela backfill** | `ua_materialy_thu.yml` | cron, ręcznie | Backfill + Excel → Drive → walidacja JSON → `ua-materialy-wyniki-thu` |
-| **UA poniedzialek prep** | `ua_materialy_mon.yml` | cron, ręcznie | Rebuild Excel → `ua-materialy-wyniki-mon` |
-| **UA poniedzialek send** | `ua_materialy_tue.yml` | cron, ręcznie | Wysyłka partia 1 (300) → `ua-materialy-wyniki-tue` |
-| **UA wtorek send** | `ua_materialy_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `ua-materialy-wyniki-fri` |
-| **UA sync + przypomnienia** | `ua_materialy_reminders.yml` | cron co 3 dni, ręcznie | IMAP + przypomnienia → `ua-materialy-wyniki-reminders` |
-| **Sync wyniki Google Drive UA** | `sync-google-drive-ua.yml` | cron pon 06:00, ręcznie | Upload `Wyniki/` → folder UA + przebudowa `ua_materialy_zbiorczy.xlsx` |
-| **UA merge Excel Drive** | `ua_merge_drive_excel.yml` | ręcznie | Zbiorczy Excel: Drive + artefakty GH (wiersze z Excel); **bez** kolumn mail/odpowiedź/cena |
-| **UA cleanup Drive** | `ua_cleanup_drive.yml` | ręcznie | Kosz: wszystko oprócz zbiorczego, `.json`, `.log` |
 
-Merge i cleanup **nie** są w grupie concurrency `ua-pipeline` (nie kasują discovery).
+|----------|------|---------|---------|
+
+| **Tests** | `tests.yml` | push, PR | `py_compile` + smoke `--test` (GU, UA, PL) + pełna regresja |
+
+| **CI Deploy** | `ci-deploy.yml` | push | smoke + walidacja secretów + dry-run maili |
+
+| **GU discovery** | `de_gu_pi.yml` | cron, ręcznie | Discovery pon–pt (max 12 h/run) → `de-gu-wyniki-pi` |
+
+| **GU niedziela backfill** | `de_gu_thu.yml` | cron, ręcznie | Backfill + Excel → `de-gu-wyniki-thu` |
+
+| **GU poniedzialek prep** | `de_gu_mon.yml` | cron, ręcznie | Rebuild Excel → `de-gu-wyniki-mon` |
+
+| **GU poniedzialek send** | `de_gu_tue.yml` | cron, ręcznie | Wysyłka partia 1 (do 300) → `de-gu-wyniki-tue` |
+
+| **GU wtorek send** | `de_gu_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `de-gu-wyniki-fri` |
+
+| **Sync wyniki Google Drive** | `sync-google-drive.yml` | cron pon 06:00 PL, ręcznie | Upload `Wyniki/` na Drive |
+
+
 
 ## Harmonogram cron (Europe/Warsaw)
 
-| Dzień | Workflow | Cron | Godzina |
-|-------|----------|------|---------|
-| Poniedziałek | discovery 1 | `0 17 * * 1` | **17:00** |
-| Wtorek | discovery 2 | `0 15 * * 2` | **15:00** |
-| Środa | discovery 3 | `0 19 * * 3` | **19:00** |
-| Czwartek | discovery 4 | `0 20 * * 4` | **20:00** |
-| Piątek | discovery 5 | `0 16 * * 5` | **16:00** |
-| Niedziela | backfill | `30 5 * * 0` | **05:30** |
-| Poniedziałek | sync Drive | `0 6 * * 1` | **06:00** |
-| Poniedziałek | prep | `0 7 * * 1` | **07:00** |
-| Poniedziałek | send 1 | `0 9 * * 1` | **09:00** |
-| Wtorek | send 2 | `0 9 * * 2` | **09:00** |
-| Co 3 dni | sync + przypomnienia | `0 10 1,4,7,10,13,16,19,22,25,28 * *` | **10:00** |
 
-## Excel zbiorczy i Drive
 
-1. Sync / merge buduje `ua_materialy_zbiorczy.xlsx` z Exceli na Drive oraz z najnowszych artefaktów `ua-materialy-wyniki-*` (bez cache JSON jako źródła firm).
-2. Plik na Drive jest **nadpisywany** (bez daty w nazwie).
-3. Opcjonalnie `UA cleanup Drive` usuwa stare `ua_materialy_kontakte*.xlsx`, zostawiając zbiorczy + JSON + log.
+| Dzień | Workflow | Cron | Godzina PL |
+|-------|----------|------|------------|
+| **Poniedziałek** | discovery część 1 | `0 17 * * 1` | **17:00** |
+| **Wtorek** | discovery część 2 | `0 15 * * 2` | **15:00** |
+| **Środa** | discovery część 3 | `0 19 * * 3` | **19:00** |
+| **Czwartek** | discovery część 4 | `0 20 * * 4` | **20:00** |
+| **Piątek** | discovery część 5 | `0 16 * * 5` | **16:00** |
+| **Niedziela** | backfill | `30 5 * * 0` | **05:30** |
+| **Poniedziałek** | sync Drive | `0 6 * * 1` | **06:00** |
+| **Poniedziałek** | prep | `0 7 * * 1` | **07:00** |
+| **Poniedziałek** | send 1 | `0 9 * * 1` | **09:00** |
+| **Wtorek** | send 2 | `0 9 * * 2` | **09:00** |
 
-Szczegóły: [`GOOGLE_DRIVE.md`](GOOGLE_DRIVE.md).
 
-## Crawl / discovery
 
-Crawl www pomija binarki (np. `.exe` w query stringu, ścieżki `/download/file`) i nie robi retry na typowych 4xx (poza 408/429), żeby discovery nie wisiał na zbędnych pobraniach.
+Wysyłka w oknie **8–18** czasu berlińskiego (bez `DISABLE_SEND_WINDOW` w workflowach send).
 
-## Odpowiedzi i przypomnienia
 
-Skrypt `ua_sync_replies_and_reminders.py`:
-
-1. Skanuje INBOX (IMAP) i aktualizuje cache (`reply_at`, `has_reply`, ceny…).
-2. Wysyła max. **1 przypomnienie** (język ukraiński) do firm bez odpowiedzi — min. **3 dni** po **pierwszym** zapytaniu (`email_sent_at`). Odpowiedź w ciągu tych 3 dni = pominięcie.
-
-```powershell
-python ua_sync_replies_and_reminders.py              # podgląd
-python ua_sync_replies_and_reminders.py --send       # wysyłka
-```
-
-Artefakt GHA: `ua-materialy-wyniki-reminders`.
 
 ## Sekrety
 
+
+
 | Secret | Wymagany | Opis |
+
 |--------|----------|------|
-| `SERPER_API_KEY` | tak | API Serper |
-| `ANTHROPIC_API_KEY` | tak | Claude API (discovery + klasyfikacja odpowiedzi IMAP) |
-| `MAIL_USER`, `MAIL_PASSWORD` | tak | Gmail SMTP **i** IMAP (ten sam login / hasło aplikacji) |
-| `MAIL_SENDER_NAME` | tak | Свінчак Максим (wysyłka + przypomnienia) |
-| `GDRIVE_FOLDER_ID_UA` | tak | Folder Drive UA |
-| `GDRIVE_OAUTH_*` | zalecany | OAuth upload |
-| `GDRIVE_SERVICE_ACCOUNT_JSON` | opcjonalny | Konto usługi |
 
-**Nie ustawiaj** `GDRIVE_FOLDER_ID_PL` w tym repo.
+| `SERPER_API_KEY` | discovery | API Serper |
 
-Workflow **UA sync odpowiedzi i przypomnienia**: `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_SENDER_NAME`, `ANTHROPIC_API_KEY`. `IMAP_HOST` opcjonalny (Gmail → `imap.gmail.com` w kodzie).
+| `ANTHROPIC_API_KEY` | discovery + backfill | Claude API |
 
-## Artefakty
+Modele Claude (domyślnie w kodzie, opcjonalnie env):
+
+| Zadanie | Tier | Domyślny model | Env |
+|---------|------|----------------|-----|
+| Frazy Serper, cleanup Excel | `fast` | `claude-haiku-4-5` | `CLAUDE_MODEL_FAST` |
+| Weryfikacja www, wyciąganie maili | `verify` | `claude-sonnet-4-6` | `CLAUDE_MODEL_VERIFY` (lub legacy `CLAUDE_MODEL`) |
+
+Setup OAuth: `python scripts/gdrive_oauth_setup.py` — szczegóły w [`GOOGLE_DRIVE.md`](GOOGLE_DRIVE.md).
+
+
+
+## Artifacty
+
+
 
 ```
-pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → nd→thu → sync UA → pon prep→mon → pon send→tue → wt send→fri
+
+pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela→thu → sync Drive → pon prep→mon → pon send→tue → wt send→fri
+
 ```
 
-**UA send:** bez załącznika; tel. `+380977091141`.
 
-**Maile spersonalizowane (od 2026-07-13):** Claude wybiera średnią regionalną firmę budowlaną z obwodu discovery i podaje **realny adres** obiektu z bazy `ua_regional_construction_refs.py`. W GHA: `UA_REGIONAL_INQUIRY_EMAIL_FROM=2026-07-13`.
 
-Concurrency pipeline: `ua-pipeline` (discovery / send / backfill). Merge i cleanup poza tą grupą.
+Poniedziałek 17:00 (discovery): `de-gu-wyniki-fri` → `de-gu-wyniki-pi` (nowy tydzień). Wtorek–piątek: kontynuacja z `pi`. Niedziela backfill: najnowszy `de-gu-wyniki-pi` (piątek). Poniedziałek rano: prep (07:00) przed wysyłką (09:00); wieczorem (17:00) start kolejnego tygodnia discovery.
+
+**Sync Drive** (pon 06:00 PL) pobiera **`de-gu-wyniki-thu`** z niedzielnego backfillu — kolejność: `thu` → `mon` → `tue` → `fri`. Nie używa `fri`/`tue` z poprzedniej wysyłki, dopóki istnieje `thu`.
+
+
+
+## Załącznik PPTX na runnerze
+
+
+
+Workflowy send ustawiają:
+
+
+
+`MFG_EMAIL_ATTACHMENT_PATH=assets/campaign/MFG_Referenzliste_Einzelhandel.pptx`
+
+
+
+Przed wysyłką workflow **pobiera świeży PPTX** ze Slides (`scripts/export_mfg_slides_attachment.py`).  
+Źródło: [Google Slides MFG](https://docs.google.com/presentation/d/1kBnp5x0pdgXZSPzVte9e92IUgn2A5gSe/edit) (OAuth `GDRIVE_OAUTH_*` na GHA).
+
+
 
 ## Ręczne uruchomienie
 
+
+
+Pełny cykl (PC, czeka na każdy krok). Przy **timeout 720 min** discovery (status failure) skrypt **kontynuuje**, jeśli run zapisał artefakt `de-gu-wyniki-pi` (`-StrictDiscovery` = stare zachowanie, przerwij):
+
+
+
 ```powershell
-gh workflow run "UA discovery" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
-gh workflow run "UA discovery" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f discovery_phase=mon
-gh workflow run "UA niedziela backfill" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
-gh workflow run "Sync wyniki Google Drive UA" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
-gh workflow run "UA merge Excel Drive" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
-gh workflow run "UA cleanup Drive (keep zbiorczy/json/log)" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
-gh workflow run "UA cleanup Drive (keep zbiorczy/json/log)" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f dry_run=1
-gh workflow run "UA poniedzialek prep" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
-gh workflow run "UA poniedzialek send" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f force_resend=true
-gh workflow run "UA wtorek send" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina -f force_resend=true
-gh workflow run "UA sync odpowiedzi i przypomnienia" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
-gh workflow run "Tests" -R Bigmax1993/wyszukiwarka-materialow-budowlanych-ukraina
+
+powershell -ExecutionPolicy Bypass -File scripts\run_full_pipeline_gha.ps1 -ForceResend
+
 ```
 
-Pełny łańcuch: `scripts/run_full_pipeline_gha.ps1`
 
-Harmonogram PC: [`schedule/ua/PLAN_5_DNI_UA.md`](../schedule/ua/PLAN_5_DNI_UA.md)
+
+Pojedyncze kroki (`gh`):
+
+
+
+```powershell
+
+gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=mon
+gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=tue
+gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=wed
+gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=thu
+gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=fri
+gh workflow run "GU discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f resume_artifact_run_id=RUN_ID
+
+gh workflow run "GU niedziela backfill" -R Bigmax1993/Wyszukiwarka-partnerow
+
+gh workflow run "Sync wyniki Google Drive" -R Bigmax1993/Wyszukiwarka-partnerow
+
+gh workflow run "GU poniedzialek prep" -R Bigmax1993/Wyszukiwarka-partnerow
+
+gh workflow run "GU poniedzialek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
+
+gh workflow run "GU wtorek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
+
+```
+
+
+
+Kolejność: discovery (pon–pt) → backfill → sync Drive → prep → pon send → wt send.
+
+Po piątkowym discovery (ręcznie):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\resume_pipeline_after_pi.ps1 -PiRunId RUN_ID
+```
+
+---
+
+## Kampania UA (materiały budowlane)
+
+Identyczny harmonogram jak GU — szczegóły: [`schedule/ua/PLAN_5_DNI_UA.md`](../schedule/ua/PLAN_5_DNI_UA.md).
+
+| Workflow | Plik | Trigger | Co robi |
+|----------|------|---------|---------|
+| **UA discovery** | `ua_materialy_pi.yml` | cron, ręcznie | Discovery pon–pt → `ua-materialy-wyniki-pi` |
+| **UA niedziela backfill** | `ua_materialy_thu.yml` | cron, ręcznie | Backfill + Excel → `ua-materialy-wyniki-thu` |
+| **UA poniedzialek prep** | `ua_materialy_mon.yml` | cron, ręcznie | Rebuild Excel → `ua-materialy-wyniki-mon` |
+| **UA poniedzialek send** | `ua_materialy_tue.yml` | cron, ręcznie | Wysyłka partia 1 (do 300) → `ua-materialy-wyniki-tue` |
+| **UA wtorek send** | `ua_materialy_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `ua-materialy-wyniki-fri` |
+| **Sync wyniki Google Drive UA** | `sync-google-drive-ua.yml` | cron pon 06:00 PL, ręcznie | Upload `Wyniki/` na folder UA (`GDRIVE_FOLDER_ID_UA`) |
+
+Cron (Europe/Warsaw): **identyczny jak GU** — pon 17:00 … pt 16:00 discovery; nd 05:30 backfill; pon 06:00 sync; pon 07:00 prep; pon 09:00 + wt 09:00 send.
+
+Artefakty:
+
+```
+pon→pi | wt→pi | sro→pi | czw→pi | pt→pi → niedziela→thu → sync Drive UA → pon prep→mon → pon send→tue → wt send→fri
+```
+
+**UA send:** bez załącznika PPTX; `MAIL_SENDER_NAME` → Свінчак Максим; telefon `+380977091141`.
+
+Dodatkowy secret: `GDRIVE_FOLDER_ID_UA` (osobny folder Drive dla wyników UA).
+
+Ręczne uruchomienie:
+
+```powershell
+gh workflow run "UA discovery" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "UA discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=mon
+gh workflow run "UA niedziela backfill" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "Sync wyniki Google Drive UA" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "UA poniedzialek prep" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "UA poniedzialek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
+gh workflow run "UA wtorek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
+```
+
+Concurrency: `ua-pipeline` (osobna grupa od `gu-pipeline` — obie kampanie mogą działać równolegle).
+
+---
+
+## Kampania PL (materiały budowlane)
+
+Szczegóły: [`docs/PL_MATERIALY.md`](PL_MATERIALY.md), harmonogram: [`schedule/pl/PLAN_5_DNI_PL.md`](../schedule/pl/PLAN_5_DNI_PL.md).
+
+| Workflow | Plik | Trigger | Co robi |
+|----------|------|---------|---------|
+| **PL discovery** | `pl_materialy_pi.yml` | cron, ręcznie | Discovery pon–pt (serper-only) → `pl-materialy-wyniki-pi` |
+| **PL niedziela backfill** | `pl_materialy_thu.yml` | cron, ręcznie | Crawl www + Excel → `pl-materialy-wyniki-thu` |
+| **PL poniedzialek prep** | `pl_materialy_mon.yml` | cron, ręcznie | Rebuild Excel → `pl-materialy-wyniki-mon` |
+| **PL poniedzialek send** | `pl_materialy_tue.yml` | cron, ręcznie | Wysyłka partia 1 → `pl-materialy-wyniki-tue` |
+| **PL wtorek send** | `pl_materialy_fri.yml` | cron, ręcznie | Wysyłka partia 2 → `pl-materialy-wyniki-fri` |
+| **Sync wyniki Google Drive PL** | `sync-google-drive-pl.yml` | cron pon 11:00 PL, ręcznie | Upload `Wyniki/` → folder PL |
+
+Cron (Europe/Warsaw) — **+5h względem UA** (brak kolizji pipeline):
+
+| Dzień | Workflow | Cron | Godzina PL |
+|-------|----------|------|------------|
+| Poniedziałek | discovery część 1 | `0 22 * * 1` | **22:00** |
+| Wtorek | discovery część 2 | `0 20 * * 2` | **20:00** |
+| Czwartek | discovery część 3 | `0 0 * * 4` | **00:00** |
+| Piątek | discovery część 4 | `0 1 * * 5` | **01:00** |
+| Piątek | discovery część 5 | `0 21 * * 5` | **21:00** |
+| Niedziela | backfill | `30 10 * * 0` | **10:30** |
+| Poniedziałek | sync Drive PL | `0 11 * * 1` | **11:00** |
+| Poniedziałek | prep | `0 12 * * 1` | **12:00** |
+| Poniedziałek | send 1 | `0 14 * * 1` | **14:00** |
+| Wtorek | send 2 | `0 14 * * 2` | **14:00** |
+
+Artefakty:
+
+```
+pon→pi | wt→pi | czw→pi | pt→pi (×2) → niedziela→thu → sync Drive PL → pon prep→mon → pon send→tue → wt send→fri
+```
+
+**PL send:** bez załącznika; telefon **516513965**; maile po polsku.
+
+Secret Drive: `GDRIVE_FOLDER_ID_PL` = `1O15CdN0TH8rx74sPP5C1GuYSweX81IGw`
+
+Ręczne uruchomienie:
+
+```powershell
+gh workflow run "PL discovery" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "PL discovery" -R Bigmax1993/Wyszukiwarka-partnerow -f discovery_phase=mon
+gh workflow run "PL niedziela backfill" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "Sync wyniki Google Drive PL" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "PL poniedzialek prep" -R Bigmax1993/Wyszukiwarka-partnerow
+gh workflow run "PL poniedzialek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
+gh workflow run "PL wtorek send" -R Bigmax1993/Wyszukiwarka-partnerow -f force_resend=true
+```
+
+Concurrency: `pl-pipeline` (równolegle z `ua-pipeline` i `gu-pipeline`).
+
+Cache: po aktualizacji kodu wersja `pl_enrichment_v2` czyści stare buckety przy pierwszym `load_cache()` — szczegóły w [`PL_MATERIALY.md`](PL_MATERIALY.md#cache-json).
+

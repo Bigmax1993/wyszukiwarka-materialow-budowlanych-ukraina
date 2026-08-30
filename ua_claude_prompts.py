@@ -295,73 +295,22 @@ def build_row_cleanup_prompt(
     url: str = "",
 ) -> str:
     return f"""РОЛЬ
-Ти — QA-фільтр перед експортом у Excel (kolumna «Adres», telefon, website).
-Будь безжальним: краще porozhne pole "", nizh bрехня w adresie.
+Ти готуєш рядок Excel для B2B-бази постачальників будматеріалів в Україні.
+Відповідай ЛИШЕ JSON.
 
-ВАЖЛИВО: company_name_clean ЗАВЖДИ повертaj як "".
-Kolumna «Nazwa firmy» jest ZAWSZE ustawiana przez system wyłącznie z domeny website
-(np. wikibud.com.ua → Wikibud). Nie wypełniaj company_name_clean.
-
-ВІДПОВІДЬ — ЛИШЕ JSON (без markdown, без пояснень).
-
-СХЕМА (усі ключі обов'язкові)
+СХЕМА
 {{"company_name_clean":"","address":"","phone":"","website":"","bundesland":"","handelsketten":"","url":""}}
 
-═══════════════════════════════════════════════════════════
-company_name_clean
-═══════════════════════════════════════════════════════════
-ЗАВЖДИ "" — ignoruj pole company.
+ПРАВИЛА
+• company_name_clean — офіційна назва + форма (ТОВ, ПП, ФОП) або ""
+• address — адреса в Україні або ""
+• phone — один номер UA (+380 або 0…) або ""
+• website — https://domain (корінь) або ""
+• bundesland — один з: [{states}] або ""
+• handelsketten — категорії матеріалів (цемент, пісок, …) через кому або ""
+• url — як website
 
-═══════════════════════════════════════════════════════════
-address — KILLER-ПРАВИЛА
-═══════════════════════════════════════════════════════════
-
-ДОЗВОЛЕНО:
-• Фізична адреса в Україні: вулиця/проспект/провулок + (будинок) + місто (+ область).
-• Приклади OK:
-  «вул. Промислова, 12, м. Київ»
-  «просп. Перемоги, 45, Львів, Львівська обл.»
-  «с. Гатне, вул. Центральна, 3, Київська обл.»
-
-ЗАБОРОНЕНО — address = "":
-• Лише «Київ», «Україна», «Київська область» без вулиці
-• Маркетинг / опис асортименту / слогани (те саме що в company)
-• Ціни, товари, «грн/м», «від … грн»
-• «біля метро …», «доставка по Україні» без вулиці
-• Дубль назви фірми або домену
-• Текст довший за ~120 символів без ознак вулиці (вул., ул., просп., пров., бульв., наб., пл., буд., оф.)
-
-ПРАВИЛО: немає вулиці (вул./ул./просп./пров./бульв./наб.) → address = ""
-(виняток: с./смт. + вул. — OK)
-
-═══════════════════════════════════════════════════════════
-Інші поля
-═══════════════════════════════════════════════════════════
-• phone — один номер UA (+380… або 0XX…) або ""
-• website — https://domain.tld (корінь, без шляху /search /product) або ""
-• url — ідентично website
-• bundesland — РІВНО один з: [{states}] — інакше ""
-• handelsketten — категорії матеріалів малими літерами через кому (цемент, пісок, …) або ""
-• email — НЕ виходить у JSON; лише для перевірки
-
-═══════════════════════════════════════════════════════════
-НЕГАТИВНІ ПРИКЛАДИ (еталон поведінки)
-═══════════════════════════════════════════════════════════
-company="Фольгований утеплювач", website="https://wikibud.com.ua", address="Київ"
-→ {{"company_name_clean":"","address":"","phone":"…","website":"https://wikibud.com.ua","bundesland":"Київ","handelsketten":"…","url":"https://wikibud.com.ua"}}
-
-company="Service unavailable", address="Київ"
-→ company_name_clean="", address=""
-
-company="budMATERIAL: Купити будівельні матерія", website="https://budmaterial.kyiv.ua", address="Рішення просте — замовте…"
-→ company_name_clean="", address=""
-
-company="ТОВ \"Венбуд\"", website="https://venbud.ua", address="м. Київ, вул. Бориспільська, 1"
-→ company_name_clean="", address="вул. Бориспільська, 1, м. Київ"
-
-═══════════════════════════════════════════════════════════
-ВХІД (сирий скрап — не довіряй сліпо)
-═══════════════════════════════════════════════════════════
+ВХІД
 company={company!r}
 address={address!r}
 phone={phone!r}
@@ -381,20 +330,11 @@ def build_personalized_inquiry_email_prompt_uk(
     materials: str = "",
     page_snippet: str = "",
     style_hint: str = "",
-    discovery_oblast: str = "",
-    construction_project=None,
 ) -> str:
     from ua_materialy_inquiry_email_uk import (
-        inquiry_phone,
-        inquiry_sender_name,
-    )
-    from ua_regional_sender_context import (
-        build_regional_sender_instructions_uk,
-        resolve_discovery_oblast,
-    )
-    from ua_regional_construction_refs import (
-        build_construction_project_prompt_block_uk,
-        pick_construction_project,
+        build_inquiry_sender_brief_uk,
+        build_inquiry_signature_uk,
+        build_sender_contact_line_uk,
     )
 
     snippet = (page_snippet or "").strip()
@@ -402,30 +342,21 @@ def build_personalized_inquiry_email_prompt_uk(
         snippet = snippet[:3497] + "..."
     style = (style_hint or "професійний, природний B2B-стиль, без шаблонних фраз").strip()
     mats = materials or "будматеріали (загальний асортимент)"
-    region_key = resolve_discovery_oblast(
-        {"bundesland": oblast, "discovery_bundesland": discovery_oblast},
-        fallback=oblast or discovery_oblast,
-    )
-    project = construction_project or pick_construction_project(
-        region_key, seed=company_name or oblast or discovery_oblast
-    )
-    project_block = build_construction_project_prompt_block_uk(project)
-    regional_sender = build_regional_sender_instructions_uk(
-        region_key,
-        sender_name=inquiry_sender_name(),
-        sender_phone=inquiry_phone(),
-        construction_project_block=project_block,
-    )
+    sender_brief = build_inquiry_sender_brief_uk()
+    sender_contact = build_sender_contact_line_uk()
+    signature_block = build_inquiry_signature_uk()
     return f"""РОЛЬ
 Ти — автор B2B-листів українською. Пишеш УНІКАЛЬНИЙ лист для КОНКРЕТНОЇ фірми-постачальника будматеріалів в Україні.
 Кожен лист має відрізнятися формулюваннями — не копіюй один шаблон для всіх.
 
-{regional_sender}
+ВІДПРАВНИК (контекст, не вигадуй інших фактів)
+{sender_brief}
+Контакт: {sender_contact or "менеджер закупівель"}
 
-ОДЕРЖУВАЧ (постачальник будматеріалів)
+ОДЕРЖУВАЧ
 Назва: {company_name}
 Сайт: {website or "(немає)"}
-Область постачальника: {oblast or "(невідомо)"}
+Область: {oblast or "(невідомо)"}
 Адреса: {address or "(немає)"}
 Категорії матеріалів (з бази): {mats}
 
@@ -436,94 +367,28 @@ def build_personalized_inquiry_email_prompt_uk(
 Напиши повністю персоналізований лист ЗАПИТУ про співпрацю / оптові ціни / прайс.
 • Мова: ВИКЛЮЧНО українська.
 • Звернення: «Шановні пані та панове» або персоналізоване до {company_name}.
-• Обов'язково згадай щось конкретне про цю фірму-постачальника (асортимент, регіон, тип діяльності).
-• Обов'язково згадай обрану локальну будівельну компанію та об'єкт будівництва з блоку «ОБ'ЄКТ БУДІВНИЦТВА» (з реальною адресою) — однаковий формат для великих міст (Київ, Львів, Одеса…) і менших населених пунктів.
+• Обов'язково згадай щось конкретне про цю фірму (асортимент, регіон, тип діяльності) — на основі даних вище.
 • Попроси прайс-лист або контакт відділу опту / продажів.
 • Не вигадуй цін, знижок, термінів доставки, яких немає у вхідних даних.
 • Стиль: {style}
-• Довжина тіла: 140–240 слів (без підпису).
-
-ФОРМАТ ЛИСТА (body — plain text з порожніми рядками між блоками)
-Обов'язкова структура — використовуй \\n\\n між блоками:
-1) Звернення (один рядок), напр. «Шановні пані та панове,»
-2) Порожній рядок
-3) 2–3 абзаци основного тексту (кожен абзац — окремий блок через \\n\\n)
-4) Порожній рядок
-5) «З повагою,» (окремий рядок)
-6) Ім'я та посада / компанія (окремий рядок)
-7) Tel.: {inquiry_phone()} (окремий рядок)
-
-Приклад body у JSON (з \\n та \\n\\n):
-"body":"Шановні пані та панове,\\n\\nПерший абзац листа.\\n\\nДругий абзац з проханням про прайс.\\n\\nЗ повагою,\\n{inquiry_sender_name()}\\nМенеджер, БК «Альтбуд»\\nTel.: {inquiry_phone()}"
+• Довжина тіла: 120–220 слів (без підпису).
 
 ЗАБОРОНЕНО
 • Російська мова
-• Німецькі номери (+49, 0049) — заборонено; єдиний контактний телефон: {inquiry_phone()} (у підписі)
+• Німецькі номери (+49, 0049) — заборонено; єдиний контактний телефон: +380977091141 (у підписі)
 • Слова: безкоштовно, акція, терміново, клікніть, знижка 50%
 • Один і той самий текст для різних фірм
 • Заборонено додавати вкладення / файли / посилання на завантаження
 • HTML, markdown
-• Представлятися як постачальник або анонімний «покупець» без назви будівельної компанії
-• Вигадані або змінені адреси будмайданчика (інша вулиця, номер, місто)
+
+ПІДПИС (додай у поле body наприкінці, БЕЗ змін):
+{signature_block}
 
 ВИХІД — ЛИШЕ JSON (без markdown):
 {{"subject":"...","body":"..."}}
 
-subject: унікальний, до 78 символів, українською; згадай тип об'єкта будівництва або регіон
-body: повний лист готовий до відправки (plain text з акратами через \\n\\n), включно з підписом (ім'я, посада, компанія, tel.)
-"""
-
-
-def build_reminder_email_prompt_uk(
-    *,
-    company_name: str,
-    original_subject: str = "",
-    sent_date: str = "",
-    original_body_excerpt: str = "",
-    reminder_number: int = 1,
-) -> str:
-    excerpt = (original_body_excerpt or "").strip()
-    if len(excerpt) > 1200:
-        excerpt = excerpt[:1197] + "..."
-    tone = (
-        "делікатне, ввічливе нагадування (перше)"
-        if reminder_number < 2
-        else "наполегливе, але культурне друге нагадування"
-    )
-    date_line = f"Дата першого листа: {sent_date}." if sent_date else ""
-    subj_line = f"Тема першого листа: {original_subject}." if original_subject else ""
-    return f"""РОЛЬ
-Ти пишеш короткий, ПРИРОДНИЙ лист-нагадування українською — як жива людина з будівельної галузі, не бот.
-Це follow-up B2B до постачальника будматеріалів, який не відповів на запит.
-
-ОДЕРЖУВАЧ
-Фірма: {company_name}
-{date_line}
-{subj_line}
-
-КОНТЕКСТ (перший лист — НЕ вставляй його знову, лише загально посилайся):
-{excerpt or "(немає тексту — посилайся на запит щодо будматеріалів)"}
-
-ЗАВДАННЯ
-Напиши ВИКЛЮЧНО текст нагадування (без підпису, без цитати попереднього листа).
-• Тон: {tone}
-• 2–3 короткі абзаци, розділені порожнім рядком (\\n\\n)
-• Почни з «Доброго дня,» або персоналізованого звернення до {company_name}
-• Природна, людська мова — уникай шаблонних фраз на кшталт «нагадую про наш запит щодо комерційної пропозиції від…»
-• Коротко згадай, що очікуєш відповідь / прайс / контакт — без тиску
-• 50–110 слів загалом
-• НЕ повторюй довгий перелік товарів з першого листа
-
-ЗАБОРОНЕНО
-• Підпис, ім'я, телефон, посилання, HTML, markdown
-• Російська мова
-• Слова: терміново, останній шанс, негайно, безкоштовно, акція
-• Один суцільний блок тексту без абзаців
-
-ВИХІД — ЛИШЕ JSON (без markdown):
-{{"intro":"..."}}
-
-intro: лише текст нагадування (plain text), з абзацами через порожній рядок
+subject: унікальний, до 78 символів, українською, з назвою або спеціалізацією фірми
+body: повний лист готовий до відправки (plain text), включно з підписом вище
 """
 
 
