@@ -334,5 +334,93 @@ class CampaignPathsRegression(unittest.TestCase):
         self.assertTrue(str(paths["output_file"]).endswith("ua_materialy_kontakte.xlsx"))
 
 
+class SerperOnlyDiscoveryValidationRegression(unittest.TestCase):
+    def test_pipeline_counts_pending_and_verified(self):
+        rows = [
+            {
+                "url": "https://a.ua",
+                "verification_reason": scraper.PENDING_WWW_VERIFY_REASON,
+                "retail_verified": False,
+                "discovery_bundesland": "Kharkivska",
+            },
+            {
+                "url": "https://b.ua",
+                "retail_verified": True,
+                "discovery_bundesland": "Kharkivska",
+            },
+        ]
+        cache = {
+            "contacts": {
+                "https://c.ua": {
+                    "verification_reason": scraper.PENDING_WWW_VERIFY_REASON,
+                    "retail_verified": False,
+                    "discovery_bundesland": "Kharkivska",
+                }
+            }
+        }
+        self.assertEqual(
+            scraper.count_discovery_pipeline_for_bundesland(rows, cache, "Kharkivska"),
+            3,
+        )
+
+    def test_sufficient_with_verified_only_no_pending(self):
+        rows = [
+            {
+                "url": f"https://v{i}.ua",
+                "retail_verified": True,
+                "discovery_bundesland": "Kharkivska",
+            }
+            for i in range(20)
+        ]
+        self.assertTrue(
+            scraper.serper_only_discovery_sufficient(
+                rows,
+                {},
+                land="Kharkivska",
+                total_new_rows=20,
+            )
+        )
+
+    def test_insufficient_with_few_pending_and_no_verified(self):
+        rows = [
+            {
+                "url": "https://a.ua",
+                "verification_reason": scraper.PENDING_WWW_VERIFY_REASON,
+                "retail_verified": False,
+                "discovery_bundesland": "Kharkivska",
+            }
+        ]
+        scraper.MIN_CONTACTS_TARGET = 20
+        self.assertFalse(
+            scraper.serper_only_discovery_sufficient(
+                rows,
+                {},
+                land="Kharkivska",
+                total_new_rows=1,
+            )
+        )
+
+    def test_needs_claude_supplement_skips_when_target_reached(self):
+        rows = [
+            {
+                "url": f"https://v{i}.ua",
+                "retail_verified": True,
+                "discovery_bundesland": "Kharkivska",
+            }
+            for i in range(20)
+        ]
+        scraper.MIN_CONTACTS_TARGET = 20
+        self.assertFalse(
+            scraper._needs_claude_discovery_supplement(
+                rows,
+                {},
+                "Kharkivska",
+                20,
+                rotate_mode=True,
+                serper_only=True,
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
