@@ -28,7 +28,6 @@ if str(ROOT) not in sys.path:
 
 from campaign_data_paths import (  # noqa: E402
     GOOGLE_DRIVE_GU_FOLDER_ID,
-    GOOGLE_DRIVE_PL_FOLDER_ID,
     resolve_data_root,
     wyniki_dir,
     wyslane_dir,
@@ -447,10 +446,6 @@ def _default_folder_id(campaign: str) -> str:
     explicit = _normalize_folder_id(os.environ.get("GDRIVE_FOLDER_ID") or "")
     if explicit:
         return explicit
-    if campaign == "pl":
-        return _normalize_folder_id(
-            os.environ.get("GDRIVE_FOLDER_ID_PL") or GOOGLE_DRIVE_PL_FOLDER_ID
-        )
     if campaign == "ua":
         ua = _normalize_folder_id(os.environ.get("GDRIVE_FOLDER_ID_UA") or "")
         if ua:
