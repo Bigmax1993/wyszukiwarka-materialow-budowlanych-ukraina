@@ -2643,6 +2643,45 @@ def count_retail_verified_for_bundesland(rows: list, land: str) -> int:
     return count
 
 
+def count_discovery_pipeline_for_bundesland(
+    rows: list, cache: dict, land: str
+) -> int:
+    """pending_www_verify + retail_verified dla obwodu (statusy wykluczają się)."""
+    return count_pending_for_bundesland(rows, cache, land) + count_retail_verified_for_bundesland(
+        rows, land
+    )
+
+
+def count_all_discovery_pipeline_contacts(rows: list, cache: dict) -> int:
+    """pending_www_verify + retail_verified (cała kampania)."""
+    verified = sum(1 for r in (rows or []) if r.get("retail_verified"))
+    return count_all_pending_contacts(rows, cache) + verified
+
+
+def serper_only_discovery_sufficient(
+    rows: list,
+    cache: dict,
+    *,
+    land: str = "",
+    total_new_rows: int,
+    bundesweit: bool = False,
+) -> bool:
+    """
+    Czy discovery serper-only ma wystarczająco kandydatów do kontynuacji pipeline.
+
+    Akceptuje pending (niedzielny crawl) albo retail_verified (Claude inline w discovery).
+    """
+    if bundesweit:
+        pipeline = count_all_discovery_pipeline_contacts(rows, cache)
+    else:
+        pipeline = count_discovery_pipeline_for_bundesland(rows, cache, land)
+    if pipeline >= DISCOVERY_MIN_PENDING_GHA_FAIL:
+        return True
+    if total_new_rows >= MIN_CONTACTS_TARGET:
+        return True
+    return False
+
+
 def request_with_retry(
     method,
     url: str,
@@ -3134,8 +3173,17 @@ def _needs_claude_discovery_supplement(
     serper_only: bool,
 ) -> bool:
     if rotate_mode and serper_only:
-        pending = count_pending_for_bundesland(all_rows, cache, rotation_land or "")
-        return pending < MIN_CONTACTS_TARGET
+        if _discovery_target_reached(
+            all_rows,
+            total_new_rows=total_new_rows,
+            rotate_mode=True,
+            serper_only=True,
+        ):
+            return False
+        pipeline = count_discovery_pipeline_for_bundesland(
+            all_rows, cache, rotation_land or ""
+        )
+        return pipeline < MIN_CONTACTS_TARGET
     return not _discovery_target_reached(
         all_rows,
         total_new_rows=total_new_rows,
@@ -3190,7 +3238,7 @@ def _run_claude_discovery_supplement(
                 )
                 break
 
-        pending_before = count_pending_for_bundesland(
+        pipeline_before = count_discovery_pipeline_for_bundesland(
             all_rows, cache, rotation_land or ""
         )
 
@@ -3241,11 +3289,11 @@ def _run_claude_discovery_supplement(
         serper_kw["total_new_rows"] = total_new_rows
         serper_kw["stop_requested"] = stop_requested
 
-        pending_after = count_pending_for_bundesland(
+        pipeline_after = count_discovery_pipeline_for_bundesland(
             all_rows, cache, rotation_land or ""
         )
-        gain = pending_after - pending_before
-        console_step(f"Claude discovery runda {round_n}: +{gain} pending")
+        gain = pipeline_after - pipeline_before
+        console_step(f"Claude discovery runda {round_n}: +{gain} pipeline (pending+verified)")
         if gain < CLAUDE_DISCOVERY_MIN_GAIN:
             console_step(
                 f"Claude discovery: zysk +{gain} < {CLAUDE_DISCOVERY_MIN_GAIN}, stop"
@@ -6049,52 +6097,69 @@ def run_scraper(
                 pending_land = count_pending_for_bundesland(
                     all_rows, cache, rotation_land or ""
                 )
+                verified_land = count_retail_verified_for_bundesland(
+                    all_rows, rotation_land or ""
+                )
+                pipeline_land = pending_land + verified_land
                 log_discovery_funnel(funnel, logger)
                 console_step(
                     f"Serper-only: {total_new_rows} nowych, "
-                    f"{pending_land} pending dla {rotation_land} "
-                    f"({PENDING_WWW_VERIFY_REASON})."
+                    f"{pending_land} pending + {verified_land} verified = "
+                    f"{pipeline_land} pipeline dla {rotation_land}."
                 )
-                if pending_land < DISCOVERY_MIN_PENDING_GHA_FAIL:
+                if not serper_only_discovery_sufficient(
+                    all_rows,
+                    cache,
+                    land=rotation_land or "",
+                    total_new_rows=total_new_rows,
+                ):
                     if is_serper_api_exhausted(cache):
                         console_step(
-                            f"Serper API wyczerpane — kontynuuj z {pending_land} pending "
+                            f"Serper API wyczerpane — kontynuuj z {pipeline_land} pipeline "
                             f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
                         )
                     elif is_scraper_runtime_limit_reached():
                         console_step(
-                            f"Limit czasu — kontynuuj z {pending_land} pending "
+                            f"Limit czasu — kontynuuj z {pipeline_land} pipeline "
                             f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
                         )
                     else:
                         raise RuntimeError(
-                            f"Za mało kandydatów pending ({pending_land} < "
-                            f"{DISCOVERY_MIN_PENDING_GHA_FAIL}) dla {rotation_land}. "
-                            "Sprawdź [LEjek] w logu."
+                            f"Za mało kandydatów discovery ({pipeline_land} pending+verified < "
+                            f"{DISCOVERY_MIN_PENDING_GHA_FAIL}, nowych={total_new_rows}) "
+                            f"dla {rotation_land}. Sprawdź [LEjek] w logu."
                         )
             elif serper_only:
                 pending_all = count_all_pending_contacts(all_rows, cache)
+                verified_all = sum(1 for r in all_rows if r.get("retail_verified"))
+                pipeline_all = pending_all + verified_all
                 log_discovery_funnel(funnel, logger)
                 console_step(
                     f"Serper-only bundesweit: {total_new_rows} nowych, "
-                    f"{pending_all} pending ({PENDING_WWW_VERIFY_REASON})."
+                    f"{pending_all} pending + {verified_all} verified = "
+                    f"{pipeline_all} pipeline."
                 )
-                if pending_all < DISCOVERY_MIN_PENDING_GHA_FAIL:
+                if not serper_only_discovery_sufficient(
+                    all_rows,
+                    cache,
+                    total_new_rows=total_new_rows,
+                    bundesweit=True,
+                ):
                     if is_serper_api_exhausted(cache):
                         console_step(
-                            f"Serper API wyczerpane — kontynuuj z {pending_all} pending "
+                            f"Serper API wyczerpane — kontynuuj z {pipeline_all} pipeline "
                             f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
                         )
                     elif is_scraper_runtime_limit_reached():
                         console_step(
-                            f"Limit czasu — kontynuuj z {pending_all} pending "
+                            f"Limit czasu — kontynuuj z {pipeline_all} pipeline "
                             f"(poniżej progu {DISCOVERY_MIN_PENDING_GHA_FAIL})."
                         )
                     else:
                         raise RuntimeError(
-                            f"Za mało kandydatów pending ({pending_all} < "
-                            f"{DISCOVERY_MIN_PENDING_GHA_FAIL}) w całych Niemczech. "
-                            "Sprawdź [LEjek] w logu."
+                            f"Za mało kandydatów discovery ({pipeline_all} pending+verified < "
+                            f"{DISCOVERY_MIN_PENDING_GHA_FAIL}, nowych={total_new_rows}) "
+                            "w całej kampanii. Sprawdź [LEjek] w logu."
                         )
 
         if enable_auto_email:
